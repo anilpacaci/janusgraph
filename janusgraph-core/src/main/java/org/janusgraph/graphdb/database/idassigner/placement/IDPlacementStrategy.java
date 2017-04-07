@@ -14,6 +14,7 @@
 
 package org.janusgraph.graphdb.database.idassigner.placement;
 
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.InternalElement;
 import org.janusgraph.graphdb.internal.InternalVertex;
@@ -38,7 +39,46 @@ public interface IDPlacementStrategy {
      * @param element Vertex or relation to assign id to.
      * @return
      */
-    int getPartition(InternalElement element);
+    public int getPartition(InternalElement element);
+    
+    /**
+	 * Individually assigns an id to the given vertex or relation.
+	 * to be used by greedy partitioners
+	 *
+	 * @param element
+	 *            Vertex or relation to assign id to.
+	 * @param vertex
+	 *            Provides necessary context for greedy partitining heuristics
+	 *            (properties and adjacency information)
+	 * @return
+	 */
+	public int getPartition(InternalElement element, StarVertex vertex);
+
+	/**
+	 * helper method to hint partitioning algorithm about the final placement of
+	 * element
+	 * to be used by greedy partitioners
+	 * 
+	 * @param element
+	 *            that was assigned
+	 * @param partitionID
+	 *            final assignment for element
+	 */
+	public void assignedPartition(InternalElement element, int partitionID);
+
+	/**
+	 * helper method to hint partitioning algorithm about the final placement of
+	 * element
+	 * to be used by greedy partitioners
+	 *  
+	 * @param element
+	 *            that was assigned
+	 * @param vertex
+	 *            Context information for greedy partitioners
+	 * @param partitionID
+	 *            final assignment for element
+	 */
+	public void assignedPartition(InternalElement element, StarVertex vertex, int partitionID);
 
     /**
      * Bulk assignment of idAuthorities to vertices.
@@ -50,7 +90,7 @@ public interface IDPlacementStrategy {
      *
      * @param vertices Map containing all vertices and their partition placement.
      */
-    void getPartitions(Map<InternalVertex, PartitionAssignment> vertices);
+    public void getPartitions(Map<InternalVertex, PartitionAssignment> vertices);
 
     /**
      * After construction, the {@link org.janusgraph.graphdb.idmanagement.IDManager} used by this graph instance
@@ -59,7 +99,7 @@ public interface IDPlacementStrategy {
      *
      * @param idManager
      */
-    void injectIDManager(IDManager idManager);
+    public void injectIDManager(IDManager idManager);
 
     /**
      * Whether this placement strategy supports bulk placement.
@@ -67,7 +107,7 @@ public interface IDPlacementStrategy {
      *
      * @return
      */
-    boolean supportsBulkPlacement();
+    public boolean supportsBulkPlacement();
 
     /**
      * If JanusGraph is embedded, this method is used to indicate to the placement strategy which
@@ -79,11 +119,11 @@ public interface IDPlacementStrategy {
      * after construction and when the id space is redistributed.
      * <p/>
      * Depending on the storage backend one or multiple ranges of partition ids may be given. However, this list is never
-     * empty.
+     * emtpy.
      *
-     * @param localPartitionIdRanges List of {@link PartitionIDRange}s corresponding to the locally hosted partitions
+     * @param localPartitionIdRanges List of {@link PartitionIDRange}s correspondinging to the locally hosted partitions
      */
-    void setLocalPartitionBounds(List<PartitionIDRange> localPartitionIdRanges);
+    public void setLocalPartitionBounds(List<PartitionIDRange> localPartitionIdRanges);
 
     /**
      * Called when there are no more idAuthorities left in the given partition. It is expected that the
@@ -91,6 +131,6 @@ public interface IDPlacementStrategy {
      *
      * @param partitionID Id of the partition that has been exhausted.
      */
-    void exhaustedPartition(int partitionID);
+    public void exhaustedPartition(int partitionID);
 
 }

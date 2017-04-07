@@ -14,44 +14,6 @@
 
 package org.janusgraph.graphdb.configuration;
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import org.janusgraph.core.*;
-import org.janusgraph.core.attribute.AttributeSerializer;
-import org.janusgraph.core.schema.DefaultSchemaMaker;
-import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.StandardIndexProvider;
-import org.janusgraph.diskstorage.StandardStoreManager;
-import org.janusgraph.diskstorage.keycolumnvalue.ttl.TTLKCVSManager;
-import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
-import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
-import org.janusgraph.graphdb.database.management.ManagementSystem;
-import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
-import org.janusgraph.util.stats.NumberUtil;
-import org.janusgraph.diskstorage.util.time.*;
-import org.janusgraph.diskstorage.configuration.*;
-import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-import org.janusgraph.diskstorage.configuration.backend.KCVSConfiguration;
-import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
-import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
-import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
-import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
-import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
-import org.janusgraph.diskstorage.log.kcvs.KCVSLogManager;
-import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
-import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
-import org.janusgraph.graphdb.database.cache.SchemaCache;
-import org.janusgraph.graphdb.database.serialize.StandardSerializer;
-import org.janusgraph.util.encoding.LongEncoding;
-import org.janusgraph.util.system.ConfigurationUtil;
-import org.janusgraph.util.system.LoggerUtil;
-import org.janusgraph.util.system.NetworkUtil;
-
-import org.apache.tinkerpop.gremlin.structure.Graph;
-import info.ganglia.gmetric4j.gmetric.GMetric.UDPAddressingMode;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
@@ -59,26 +21,77 @@ import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.Nullable;
 import javax.management.MBeanServerFactory;
 
 import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.configuration.*;
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ClassUtils;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.janusgraph.core.JanusGraphConfigurationException;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.attribute.AttributeSerializer;
+import org.janusgraph.core.schema.DefaultSchemaMaker;
+import org.janusgraph.diskstorage.Backend;
+import org.janusgraph.diskstorage.StandardIndexProvider;
+import org.janusgraph.diskstorage.StandardStoreManager;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigElement;
+import org.janusgraph.diskstorage.configuration.ConfigNamespace;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.MergedConfiguration;
+import org.janusgraph.diskstorage.configuration.MixedConfiguration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.ReadConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.KCVSConfiguration;
+import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
+import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.keycolumnvalue.ttl.TTLKCVSManager;
+import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
+import org.janusgraph.diskstorage.log.kcvs.KCVSLogManager;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
+import org.janusgraph.diskstorage.util.time.TimestampProviders;
+import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
+import org.janusgraph.graphdb.database.cache.SchemaCache;
+import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
+import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
+import org.janusgraph.graphdb.database.management.ManagementSystem;
+import org.janusgraph.graphdb.database.serialize.Serializer;
+import org.janusgraph.graphdb.database.serialize.StandardSerializer;
+import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
+import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
+import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
+import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
+import org.janusgraph.util.encoding.LongEncoding;
+import org.janusgraph.util.stats.MetricManager;
+import org.janusgraph.util.stats.NumberUtil;
+import org.janusgraph.util.system.ConfigurationUtil;
+import org.janusgraph.util.system.NetworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import org.janusgraph.diskstorage.Backend;
-import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
-import org.janusgraph.graphdb.database.serialize.Serializer;
-import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
-import org.janusgraph.util.stats.MetricManager;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+import info.ganglia.gmetric4j.gmetric.GMetric.UDPAddressingMode;
 
 /**
  * Provides functionality to configure a {@link org.janusgraph.core.JanusGraph} INSTANCE.
@@ -98,7 +111,7 @@ public class GraphDatabaseConfiguration {
             LoggerFactory.getLogger(GraphDatabaseConfiguration.class);
 
 
-    public static final ConfigNamespace ROOT_NS = new ConfigNamespace(null,"root","Root Configuration Namespace for the JanusGraph Graph Database");
+    public static ConfigNamespace ROOT_NS = new ConfigNamespace(null,"root","Root Configuration Namespace for the JanusGraph Graph Database");
 
     // ########## Graph-level Config Options ##########
     // ################################################
@@ -106,19 +119,13 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace GRAPH_NS = new ConfigNamespace(ROOT_NS,"graph",
             "General configuration options");
 
-    public static final ConfigOption<Boolean> ALLOW_SETTING_VERTEX_ID = new ConfigOption<>(GRAPH_NS,"set-vertex-id",
+    public static final ConfigOption<Boolean> ALLOW_SETTING_VERTEX_ID = new ConfigOption<Boolean>(GRAPH_NS,"set-vertex-id",
             "Whether user provided vertex ids should be enabled and JanusGraph's automatic id allocation be disabled. " +
             "Useful when operating JanusGraph in concert with another storage system that assigns long ids but disables some " +
             "of JanusGraph's advanced features which can lead to inconsistent data. EXPERT FEATURE - USE WITH GREAT CARE.",
             ConfigOption.Type.FIXED, false);
 
-    public static final ConfigOption<String> GRAPH_NAME = new ConfigOption<>(GRAPH_NS, "graphname",
-            "This config option is an optional configuration setting that you may supply when opening a graph. " +
-            "The String value you provide will be the name of your graph. If you use the ConfigurationManagement APIs, " +
-            "then you will be able to access your graph by this String representation using the ConfiguredGraphFactory APIs.",
-            ConfigOption.Type.LOCAL, String.class);
-
-    public static final ConfigOption<TimestampProviders> TIMESTAMP_PROVIDER = new ConfigOption<>(GRAPH_NS, "timestamps",
+    public static final ConfigOption<TimestampProviders> TIMESTAMP_PROVIDER = new ConfigOption<TimestampProviders>(GRAPH_NS, "timestamps",
             "The timestamp resolution to use when writing to storage and indices. Sets the time granularity for the " +
             "entire graph cluster. To avoid potential inaccuracies, the configured time resolution should match " +
             "those of the backend systems. Some JanusGraph storage backends declare a preferred timestamp resolution that " +
@@ -128,7 +135,7 @@ public class GraphDatabaseConfiguration {
             "declaration of this setting overrides both the general and backend-specific defaults.",
             ConfigOption.Type.FIXED, TimestampProviders.class, TimestampProviders.MICRO);
 
-//    public static final ConfigOption<KryoInstanceCacheImpl> KRYO_INSTANCE_CACHE = new ConfigOption<>(GRAPH_NS, "kryo-instance-cache",
+//    public static final ConfigOption<KryoInstanceCacheImpl> KRYO_INSTANCE_CACHE = new ConfigOption<KryoInstanceCacheImpl>(GRAPH_NS, "kryo-instance-cache",
 //            "Controls how Kryo instances are created and cached.  Kryo instances are not " +
 //            "safe for concurrent access.  JanusGraph is responsible guaranteeing that concurrent threads use separate " +
 //            "Kryo instances.  JanusGraph defaults to a Kryo caching approach based on ThreadLocal, as recommended by the " +
@@ -144,7 +151,7 @@ public class GraphDatabaseConfiguration {
 //            "used by older deployments predates KryoPool's introduction.",
 //            ConfigOption.Type.MASKABLE, KryoInstanceCacheImpl.class, KryoInstanceCacheImpl.THREAD_LOCAL);
 
-    public static final ConfigOption<String> UNIQUE_INSTANCE_ID = new ConfigOption<>(GRAPH_NS,"unique-instance-id",
+    public static final ConfigOption<String> UNIQUE_INSTANCE_ID = new ConfigOption<String>(GRAPH_NS,"unique-instance-id",
             "Unique identifier for this JanusGraph instance.  This must be unique among all instances " +
             "concurrently accessing the same stores or indexes.  It's automatically generated by " +
             "concatenating the hostname, process id, and a static (process-wide) counter. " +
@@ -152,22 +159,22 @@ public class GraphDatabaseConfiguration {
             ConfigOption.Type.LOCAL, String.class);
 
 
-    public static final ConfigOption<Short> UNIQUE_INSTANCE_ID_SUFFIX = new ConfigOption<>(GRAPH_NS,"unique-instance-id-suffix",
+    public static final ConfigOption<Short> UNIQUE_INSTANCE_ID_SUFFIX = new ConfigOption<Short>(GRAPH_NS,"unique-instance-id-suffix",
             "When this is set and " + UNIQUE_INSTANCE_ID.getName() + " is not, this JanusGraph " +
             "instance's unique identifier is generated by concatenating the hostname to the " +
             "provided number.  This is a legacy option which is currently only useful if the JVM's " +
             "ManagementFactory.getRuntimeMXBean().getName() is not unique between processes.",
             ConfigOption.Type.LOCAL, Short.class);
 
-    public static final ConfigOption<String> INITIAL_JANUSGRAPH_VERSION = new ConfigOption<>(GRAPH_NS,"janusgraph-version",
+    public static final ConfigOption<String> INITIAL_JANUSGRAPH_VERSION = new ConfigOption<String>(GRAPH_NS,"janusgraph-version",
             "The version of JanusGraph with which this database was created. Automatically set on first start. Don't manually set this property.",
             ConfigOption.Type.FIXED, String.class).hide();
 
-    public static final ConfigOption<String> TITAN_COMPATIBLE_VERSIONS = new ConfigOption<>(GRAPH_NS,"titan-version",
+    public static final ConfigOption<String> TITAN_COMPATIBLE_VERSIONS = new ConfigOption<String>(GRAPH_NS,"titan-version",
             "Titan version for backwards compatibility which this database was created. Automatically set on first start. Don't manually set this property.",
             ConfigOption.Type.FIXED, String.class).hide();
 
-    public static final ConfigOption<Boolean> ALLOW_STALE_CONFIG = new ConfigOption<>(GRAPH_NS,"allow-stale-config",
+    public static final ConfigOption<Boolean> ALLOW_STALE_CONFIG = new ConfigOption<Boolean>(GRAPH_NS,"allow-stale-config",
             "Whether to allow the local and storage-backend-hosted copies of the configuration to contain conflicting values for " +
             "options with any of the following types: " + Joiner.on(", ").join(ConfigOption.getManagedTypes()) + ".  " +
             "These types are managed globally through the storage backend and cannot be overridden by changing the " +
@@ -190,16 +197,16 @@ public class GraphDatabaseConfiguration {
     // ########## OLAP Style Processing ##########
     // ################################################
 
-    public static final ConfigNamespace JOB_NS = new ConfigNamespace(null,"job","Root Configuration Namespace for JanusGraph OLAP jobs");
+    public static ConfigNamespace JOB_NS = new ConfigNamespace(null,"job","Root Configuration Namespace for JanusGraph OLAP jobs");
 
-    public static final ConfigOption<Long> JOB_START_TIME = new ConfigOption<>(JOB_NS,"start-time",
+    public static final ConfigOption<Long> JOB_START_TIME = new ConfigOption<Long>(JOB_NS,"start-time",
             "Timestamp (ms since epoch) when the job started. Automatically set.", ConfigOption.Type.LOCAL, Long.class).hide();
 
 
     public static final ConfigNamespace COMPUTER_NS = new ConfigNamespace(ROOT_NS,"computer",
             "GraphComputer related configuration");
 
-    public static final ConfigOption<String> COMPUTER_RESULT_MODE = new ConfigOption<>(COMPUTER_NS,"result-mode",
+    public static final ConfigOption<String> COMPUTER_RESULT_MODE = new ConfigOption<String>(COMPUTER_NS,"result-mode",
             "How the graph computer should return the computed results. 'persist' for writing them into the graph, " +
                     "'localtx' for writing them into the local transaction, or 'none' (default)", ConfigOption.Type.MASKABLE, "none");
 
@@ -210,7 +217,7 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace TRANSACTION_NS = new ConfigNamespace(ROOT_NS,"tx",
             "Configuration options for transaction handling");
 
-    public static final ConfigOption<Boolean> SYSTEM_LOG_TRANSACTIONS = new ConfigOption<>(TRANSACTION_NS,"log-tx",
+    public static final ConfigOption<Boolean> SYSTEM_LOG_TRANSACTIONS = new ConfigOption<Boolean>(TRANSACTION_NS,"log-tx",
             "Whether transaction mutations should be logged to JanusGraph's write-ahead transaction log which can be used for recovery of partially failed transactions",
             ConfigOption.Type.GLOBAL, false);
 
@@ -224,7 +231,7 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace TRANSACTION_RECOVERY_NS = new ConfigNamespace(TRANSACTION_NS,"recovery",
             "Configuration options for transaction recovery processes");
 
-    public static final ConfigOption<Boolean> VERBOSE_TX_RECOVERY = new ConfigOption<>(TRANSACTION_RECOVERY_NS,"verbose",
+    public static final ConfigOption<Boolean> VERBOSE_TX_RECOVERY = new ConfigOption<Boolean>(TRANSACTION_RECOVERY_NS,"verbose",
             "Whether the transaction recovery system should print recovered transactions and other activity to standard output",
             ConfigOption.Type.MASKABLE, false);
 
@@ -234,32 +241,32 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace QUERY_NS = new ConfigNamespace(ROOT_NS,"query",
             "Configuration options for query processing");
 
-    public static final ConfigOption<Boolean> IGNORE_UNKNOWN_INDEX_FIELD = new ConfigOption<>(QUERY_NS, "ignore-unknown-index-key",
+    public static final ConfigOption<Boolean> IGNORE_UNKNOWN_INDEX_FIELD = new ConfigOption<Boolean>(QUERY_NS, "ignore-unknown-index-key",
             "Whether to ignore undefined types encountered in user-provided index queries",
             ConfigOption.Type.MASKABLE, false);
 
-    public static final String UNKNOWN_FIELD_NAME = "unknown_key";
+    public static final String UKNOWN_FIELD_NAME = "unknown_key";
 
 
-    public static final ConfigOption<Boolean> FORCE_INDEX_USAGE = new ConfigOption<>(QUERY_NS,"force-index",
+    public static final ConfigOption<Boolean> FORCE_INDEX_USAGE = new ConfigOption<Boolean>(QUERY_NS,"force-index",
             "Whether JanusGraph should throw an exception if a graph query cannot be answered using an index. Doing so" +
                     "limits the functionality of JanusGraph's graph queries but ensures that slow graph queries are avoided " +
                     "on large graphs. Recommended for production use of JanusGraph.",
             ConfigOption.Type.MASKABLE, false);
 
 
-    public static final ConfigOption<Boolean> PROPERTY_PREFETCHING = new ConfigOption<>(QUERY_NS,"fast-property",
+    public static final ConfigOption<Boolean> PROPERTY_PREFETCHING = new ConfigOption<Boolean>(QUERY_NS,"fast-property",
             "Whether to pre-fetch all properties on first singular vertex property access. This can eliminate backend calls on subsequent" +
                     "property access for the same vertex at the expense of retrieving all properties at once. This can be " +
                     "expensive for vertices with many properties",
-            ConfigOption.Type.MASKABLE, true);
+            ConfigOption.Type.MASKABLE, false);
 
-    public static final ConfigOption<Boolean> ADJUST_LIMIT = new ConfigOption<>(QUERY_NS,"smart-limit",
+    public static final ConfigOption<Boolean> ADJUST_LIMIT = new ConfigOption<Boolean>(QUERY_NS,"smart-limit",
             "Whether the query optimizer should try to guess a smart limit for the query to ensure responsiveness in " +
                     "light of possibly large result sets. Those will be loaded incrementally if this option is enabled.",
             ConfigOption.Type.MASKABLE, true);
 
-    public static final ConfigOption<Boolean> USE_MULTIQUERY = new ConfigOption<>(QUERY_NS,"batch",
+    public static final ConfigOption<Boolean> USE_MULTIQUERY = new ConfigOption<Boolean>(QUERY_NS,"batch",
             "Whether traversal queries should be batched when executed against the storage backend. This can lead to significant " +
                     "performance improvement if there is a non-trivial latency to the backend.",
             ConfigOption.Type.MASKABLE, false);
@@ -270,7 +277,7 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace SCHEMA_NS = new ConfigNamespace(ROOT_NS,"schema",
             "Schema related configuration options");
 
-    public static final ConfigOption<String> AUTO_TYPE = new ConfigOption<>(SCHEMA_NS,"default",
+    public static final ConfigOption<String> AUTO_TYPE = new ConfigOption<String>(SCHEMA_NS,"default",
             "Configures the DefaultSchemaMaker to be used by this graph. If set to 'none', automatic schema creation is disabled. " +
                     "Defaults to a blueprints compatible schema maker with MULTI edge labels and SINGLE property keys",
             ConfigOption.Type.MASKABLE, "default" , new Predicate<String>() {
@@ -279,7 +286,7 @@ public class GraphDatabaseConfiguration {
             if (s==null) return false;
             if (preregisteredAutoType.containsKey(s)) return true;
             try {
-                Class<?> clazz = ClassUtils.getClass(s);
+                Class clazz = ClassUtils.getClass(s);
                 return DefaultSchemaMaker.class.isAssignableFrom(clazz);
             } catch (ClassNotFoundException e) {
                 return false;
@@ -287,10 +294,11 @@ public class GraphDatabaseConfiguration {
         }
     });
 
-    private static final Map<String, DefaultSchemaMaker> preregisteredAutoType =
-            ImmutableMap.of("none", DisableDefaultSchemaMaker.INSTANCE,
-                    "default", JanusGraphDefaultSchemaMaker.INSTANCE,
-                    "tp3", Tp3DefaultSchemaMaker.INSTANCE);
+    private static final Map<String, DefaultSchemaMaker> preregisteredAutoType = new HashMap<String, DefaultSchemaMaker>() {{
+        put("none", DisableDefaultSchemaMaker.INSTANCE);
+        put("default", JanusGraphDefaultSchemaMaker.INSTANCE);
+        put("tp3", Tp3DefaultSchemaMaker.INSTANCE);
+    }};
 
 
     // ################ CACHE #######################
@@ -299,7 +307,7 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace CACHE_NS = new ConfigNamespace(ROOT_NS,"cache","Configuration options that modify JanusGraph's caching behavior");
 
 
-    public static final ConfigOption<Boolean> DB_CACHE = new ConfigOption<>(CACHE_NS,"db-cache",
+    public static final ConfigOption<Boolean> DB_CACHE = new ConfigOption<Boolean>(CACHE_NS,"db-cache",
             "Whether to enable JanusGraph's database-level cache, which is shared across all transactions. " +
             "Enabling this option speeds up traversals by holding hot graph elements in memory, " +
             "but also increases the likelihood of reading stale data.  Disabling it forces each " +
@@ -312,7 +320,9 @@ public class GraphDatabaseConfiguration {
      * percentage of the total heap space available to the JVM this JanusGraph instance is running in.
      * If this value is bigger than 1.0 it is interpreted as an absolute size in bytes.
      */
-    public static final ConfigOption<Double> DB_CACHE_SIZE = new ConfigOption<>(CACHE_NS,"db-cache-size",
+//    public static final String DB_CACHE_SIZE_KEY = "db-cache-size";
+//    public static final double DB_CACHE_SIZE_DEFAULT = 0.3;
+    public static final ConfigOption<Double> DB_CACHE_SIZE = new ConfigOption<Double>(CACHE_NS,"db-cache-size",
             "Size of JanusGraph's database level cache.  Values between 0 and 1 are interpreted as a percentage " +
             "of VM heap, while larger values are interpreted as an absolute size in bytes.",
             ConfigOption.Type.MASKABLE, 0.3);
@@ -323,7 +333,9 @@ public class GraphDatabaseConfiguration {
      * This setting only ever makes sense for distributed storage backends where writes may be accepted but are not
      * immediately readable.
      */
-    public static final ConfigOption<Integer> DB_CACHE_CLEAN_WAIT = new ConfigOption<>(CACHE_NS,"db-cache-clean-wait",
+//    public static final String DB_CACHE_CLEAN_WAIT_KEY = "db-cache-clean-wait";
+//    public static final long DB_CACHE_CLEAN_WAIT_DEFAULT = 50;
+    public static final ConfigOption<Integer> DB_CACHE_CLEAN_WAIT = new ConfigOption<Integer>(CACHE_NS,"db-cache-clean-wait",
             "How long, in milliseconds, database-level cache will keep entries after flushing them.  " +
             "This option is only useful on distributed storage backends that are capable of acknowledging writes " +
             "without necessarily making them immediately visible.",
@@ -335,12 +347,14 @@ public class GraphDatabaseConfiguration {
      * Setting this value to 0 will cache elements forever (unless they get evicted due to space constraints). This only
      * makes sense when this is the only JanusGraph instance interacting with a storage backend.
      */
-    public static final ConfigOption<Long> DB_CACHE_TIME = new ConfigOption<>(CACHE_NS,"db-cache-time",
+//    public static final String DB_CACHE_TIME_KEY = "db-cache-time";
+//    public static final long DB_CACHE_TIME_DEFAULT = 10000;
+    public static final ConfigOption<Long> DB_CACHE_TIME = new ConfigOption<Long>(CACHE_NS,"db-cache-time",
             "Default expiration time, in milliseconds, for entries in the database-level cache. " +
             "Entries are evicted when they reach this age even if the cache has room to spare. " +
             "Set to 0 to disable expiration (cache entries live forever or until memory pressure " +
             "triggers eviction when set to 0).",
-            ConfigOption.Type.GLOBAL_OFFLINE, 10000L);
+            ConfigOption.Type.GLOBAL_OFFLINE, 10000l);
 
     /**
      * Configures the maximum number of recently-used vertices cached by a transaction. The smaller the cache size, the
@@ -352,7 +366,9 @@ public class GraphDatabaseConfiguration {
      * The recently-used vertex cache can contain both dirty and clean vertices, that is, both vertices which have been
      * created or updated in the current transaction and vertices which have only been read in the current transaction.
      */
-    public static final ConfigOption<Integer> TX_CACHE_SIZE = new ConfigOption<>(CACHE_NS,"tx-cache-size",
+//    public static final String TX_CACHE_SIZE_KEY = "tx-cache-size";
+//    public static final int TX_CACHE_SIZE_DEFAULT = 20000;
+    public static final ConfigOption<Integer> TX_CACHE_SIZE = new ConfigOption<Integer>(CACHE_NS,"tx-cache-size",
             "Maximum size of the transaction-level cache of recently-used vertices.",
             ConfigOption.Type.MASKABLE, 20000);
 
@@ -364,7 +380,7 @@ public class GraphDatabaseConfiguration {
      * is exceeded.  Transactions that know how many vertices they are likely to modify a priori can avoid resize
      * costs associated with growing the dirty vertex data structure by setting this option.
      */
-    public static final ConfigOption<Integer> TX_DIRTY_SIZE = new ConfigOption<>(CACHE_NS, "tx-dirty-size",
+    public static final ConfigOption<Integer> TX_DIRTY_SIZE = new ConfigOption<Integer>(CACHE_NS, "tx-dirty-size",
           "Initial size of the transaction-level cache of uncommitted dirty vertices. " +
           "This is a performance hint for write-heavy, performance-sensitive transactional workloads. " +
           "If set, it should roughly match the median vertices modified per transaction.",
@@ -373,14 +389,14 @@ public class GraphDatabaseConfiguration {
     /**
      * The default value of {@link #TX_DIRTY_SIZE} when batch loading is disabled.
      * This value is only considered if the user does not specify a value for
-     * {@code #TX_DIRTY_CACHE_SIZE} explicitly in either the graph or transaction config.
+     * {@code #TX_DIRTY_CACHE_SIZE} explictly in either the graph or transaction config.
      */
     private static final int TX_DIRTY_SIZE_DEFAULT_WITHOUT_BATCH = 32;
 
     /**
      * The default value of {@link #TX_DIRTY_SIZE} when batch loading is enabled.
      * This value is only considered if the user does not specify a value for
-     * {@code #TX_DIRTY_CACHE_SIZE} explicitly in either the graph or transaction config.
+     * {@code #TX_DIRTY_CACHE_SIZE} explictly in either the graph or transaction config.
      */
     private static final int TX_DIRTY_SIZE_DEFAULT_WITH_BATCH = 4096;
 
@@ -388,91 +404,99 @@ public class GraphDatabaseConfiguration {
     // ################ STORAGE #######################
     // ################################################
 
+//    public static final String STORAGE_NAMESPACE = "storage";
     public static final ConfigNamespace STORAGE_NS = new ConfigNamespace(ROOT_NS,"storage","Configuration options for the storage backend.  Some options are applicable only for certain backends.");
-
-    /**
-     * Storage root directory for those storage backends that require local storage
-     */
-    public static final ConfigOption<String> STORAGE_ROOT = new ConfigOption<>(STORAGE_NS,"root",
-            "Storage root directory for those storage backends that require local storage. " +
-            "If you do not supply storage.directory and you do supply graph.graphname, then your data " +
-            "will be stored in the directory equivalent to <STORAGE_ROOT>/<GRAPH_NAME>.",
-            ConfigOption.Type.LOCAL, String.class);
 
     /**
      * Storage directory for those storage backends that require local storage
      */
-    public static final ConfigOption<String> STORAGE_DIRECTORY = new ConfigOption<>(STORAGE_NS,"directory",
-            "Storage directory for those storage backends that require local storage.",
+    public static final ConfigOption<String> STORAGE_DIRECTORY = new ConfigOption<String>(STORAGE_NS,"directory",
+            "Storage directory for those storage backends that require local storage",
             ConfigOption.Type.LOCAL, String.class);
+//    public static final String STORAGE_DIRECTORY_KEY = "directory";
 
     /**
      * Path to a configuration file for those storage backends that
      * require/support a separate config file
      */
-    public static final ConfigOption<String> STORAGE_CONF_FILE = new ConfigOption<>(STORAGE_NS,"conf-file",
+    public static final ConfigOption<String> STORAGE_CONF_FILE = new ConfigOption<String>(STORAGE_NS,"conf-file",
             "Path to a configuration file for those storage backends which require/support a single separate config file.",
             ConfigOption.Type.LOCAL, String.class);
+//    public static final String STORAGE_CONF_FILE_KEY = "conffile";
 
     /**
      * Define the storage backed to use for persistence
      */
-    public static final ConfigOption<String> STORAGE_BACKEND = new ConfigOption<>(STORAGE_NS,"backend",
+    public static final ConfigOption<String> STORAGE_BACKEND = new ConfigOption<String>(STORAGE_NS,"backend",
             "The primary persistence provider used by JanusGraph.  This is required.  It should be set one of " +
             "JanusGraph's built-in shorthand names for its standard storage backends " +
             "(shorthands: " + Joiner.on(", ").join(StandardStoreManager.getAllShorthands()) + ") " +
             "or to the full package and classname of a custom/third-party StoreManager implementation.",
             ConfigOption.Type.LOCAL, String.class);
+//    public static final String STORAGE_BACKEND_KEY = "backend";
+//    public static final String STORAGE_BACKEND_DEFAULT = "local";
 
     /**
      * Specifies whether this database is read-only, i.e. write operations are not supported
      */
-    public static final ConfigOption<Boolean> STORAGE_READONLY = new ConfigOption<>(STORAGE_NS,"read-only",
+    public static final ConfigOption<Boolean> STORAGE_READONLY = new ConfigOption<Boolean>(STORAGE_NS,"read-only",
             "Read-only database",
             ConfigOption.Type.LOCAL, false);
+//    public static final String STORAGE_READONLY_KEY = "read-only";
+//    public static final boolean STORAGE_READONLY_DEFAULT = false;
 
     /**
      * Enables batch loading which improves write performance but assumes that only one thread is interacting with
      * the graph
      */
-    public static final ConfigOption<Boolean> STORAGE_BATCH = new ConfigOption<>(STORAGE_NS,"batch-loading",
+    public static final ConfigOption<Boolean> STORAGE_BATCH = new ConfigOption<Boolean>(STORAGE_NS,"batch-loading",
             "Whether to enable batch loading into the storage backend",
             ConfigOption.Type.LOCAL, false);
+//    public static final String STORAGE_BATCH_KEY = "batch-loading";
+//    public static final boolean STORAGE_BATCH_DEFAULT = false;
 
     /**
      * Enables transactions on storage backends that support them
      */
-    public static final ConfigOption<Boolean> STORAGE_TRANSACTIONAL = new ConfigOption<>(STORAGE_NS,"transactions",
+    public static final ConfigOption<Boolean> STORAGE_TRANSACTIONAL = new ConfigOption<Boolean>(STORAGE_NS,"transactions",
             "Enables transactions on storage backends that support them",
             ConfigOption.Type.MASKABLE, true);
+//    public static final String STORAGE_TRANSACTIONAL_KEY = "transactions";
+//    public static final boolean STORAGE_TRANSACTIONAL_DEFAULT = true;
 
     /**
      * Buffers graph mutations locally up to the specified number before persisting them against the storage backend.
      * Set to 0 to disable buffering. Buffering is disabled automatically if the storage backend does not support buffered mutations.
      */
-    public static final ConfigOption<Integer> BUFFER_SIZE = new ConfigOption<>(STORAGE_NS,"buffer-size",
+    public static final ConfigOption<Integer> BUFFER_SIZE = new ConfigOption<Integer>(STORAGE_NS,"buffer-size",
             "Size of the batch in which mutations are persisted",
             ConfigOption.Type.MASKABLE, 1024, ConfigOption.positiveInt());
+//    public static final String BUFFER_SIZE_KEY = "buffer-size";
+//    public static final int BUFFER_SIZE_DEFAULT = 1024;
 
-    /*
+    /**
      * Number of times the database attempts to persist the transactional state to the storage layer.
      * Persisting the state of a committed transaction might fail for various reasons, some of which are
      * temporary such as network failures. For temporary failures, JanusGraph will re-attempt to persist the
      * state up to the number of times specified.
      */
-//    public static final ConfigOption<Integer> WRITE_ATTEMPTS = new ConfigOption<>(STORAGE_NS,"write-attempts",
+//    public static final ConfigOption<Integer> WRITE_ATTEMPTS = new ConfigOption<Integer>(STORAGE_NS,"write-attempts",
 //            "Number of attempts for write operations that might experience temporary failures",
 //            ConfigOption.Type.MASKABLE, 5, ConfigOption.positiveInt());
+//    public static final String WRITE_ATTEMPTS_KEY = "write-attempts";
+//    public static final int WRITE_ATTEMPTS_DEFAULT = 5;
 
-    /*
+    /**
      * Number of times the database attempts to execute a read operation against the storage layer in the current transaction.
      * A read operation might fail for various reasons, some of which are
      * temporary such as network failures. For temporary failures, JanusGraph will re-attempt to read the
      * state up to the number of times specified before failing the transaction
      */
-//    public static final ConfigOption<Integer> READ_ATTEMPTS = new ConfigOption<>(STORAGE_NS,"read-attempts",
+//    public static final ConfigOption<Integer> READ_ATTEMPTS = new ConfigOption<Integer>(STORAGE_NS,"read-attempts",
 //            "Number of attempts for read operations that might experience temporary failures",
 //            ConfigOption.Type.MASKABLE, 3, ConfigOption.positiveInt());
+//    public static final String READ_ATTEMPTS_KEY = "read-attempts";
+//    public static final int READ_ATTEMPTS_DEFAULT = 3;
 
     public static final ConfigOption<Duration> STORAGE_WRITE_WAITTIME = new ConfigOption<>(STORAGE_NS,"write-time",
             "Maximum time (in ms) to wait for a backend write operation to complete successfully. If a backend write operation" +
@@ -489,19 +513,22 @@ public class GraphDatabaseConfiguration {
      * across the entire JanusGraph graph database instance. Parallelization is only applicable to certain storage operations and
      * can be beneficial when the operation is I/O bound.
      */
-    public static final ConfigOption<Boolean> PARALLEL_BACKEND_OPS = new ConfigOption<>(STORAGE_NS,"parallel-backend-ops",
+    public static final ConfigOption<Boolean> PARALLEL_BACKEND_OPS = new ConfigOption<Boolean>(STORAGE_NS,"parallel-backend-ops",
             "Whether JanusGraph should attempt to parallelize storage operations",
             ConfigOption.Type.MASKABLE, true);
+//    public static final String PARALLEL_BACKEND_OPS_KEY = "parallel-backend-ops";
+//    public static final boolean PARALLEL_BACKEND_OPS_DEFAULT = true;
 
     /**
      * A unique identifier for the machine running the JanusGraph instance.
      * It must be ensured that no other machine accessing the storage backend can have the same identifier.
      */
-//    public static final ConfigOption<String> INSTANCE_RID_RAW = new ConfigOption<>(STORAGE_NS,"machine-id",
+//    public static final ConfigOption<String> INSTANCE_RID_RAW = new ConfigOption<String>(STORAGE_NS,"machine-id",
 //            "A unique identifier for the machine running the JanusGraph instance",
 //            ConfigOption.Type.LOCAL, String.class);
+//    public static final String INSTANCE_RID_RAW_KEY = "machine-id";
 
-    public static final ConfigOption<String[]> STORAGE_HOSTS = new ConfigOption<>(STORAGE_NS,"hostname",
+    public static final ConfigOption<String[]> STORAGE_HOSTS = new ConfigOption<String[]>(STORAGE_NS,"hostname",
             "The hostname or comma-separated list of hostnames of storage backend servers.  " +
             "This is only applicable to some storage backends, such as cassandra and hbase.",
             ConfigOption.Type.LOCAL, new String[]{NetworkUtil.getLoopbackAddress()});
@@ -511,7 +538,7 @@ public class GraphDatabaseConfiguration {
      * <p/>
      * Value = {@value}
      */
-    public static final ConfigOption<Integer> STORAGE_PORT = new ConfigOption<>(STORAGE_NS,"port",
+    public static final ConfigOption<Integer> STORAGE_PORT = new ConfigOption<Integer>(STORAGE_NS,"port",
             "The port on which to connect to storage backend servers.",
             ConfigOption.Type.LOCAL, Integer.class);
 
@@ -519,10 +546,10 @@ public class GraphDatabaseConfiguration {
      * Username and password keys to be used to specify an access credential that may be needed to connect
      * with a secured storage backend.
      */
-    public static final ConfigOption<String> AUTH_USERNAME = new ConfigOption<>(STORAGE_NS,"username",
+    public static final ConfigOption<String> AUTH_USERNAME = new ConfigOption<String>(STORAGE_NS,"username",
             "Username to authenticate against backend",
             ConfigOption.Type.LOCAL, String.class);
-    public static final ConfigOption<String> AUTH_PASSWORD = new ConfigOption<>(STORAGE_NS,"password",
+    public static final ConfigOption<String> AUTH_PASSWORD = new ConfigOption<String>(STORAGE_NS,"password",
             "Password to authenticate against backend",
             ConfigOption.Type.LOCAL, String.class);
 
@@ -533,6 +560,8 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> CONNECTION_TIMEOUT = new ConfigOption<>(STORAGE_NS,"connection-timeout",
             "Default timeout, in milliseconds, when connecting to a remote database instance",
             ConfigOption.Type.MASKABLE, Duration.ofMillis(10000L));
+//    public static final int CONNECTION_TIMEOUT_DEFAULT = 10000;
+//    public static final String CONNECTION_TIMEOUT_KEY = "connection-timeout";
 
     /**
      * Time in milliseconds for backend manager to wait for the storage backends to
@@ -546,23 +575,22 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> SETUP_WAITTIME = new ConfigOption<>(STORAGE_NS,"setup-wait",
             "Time in milliseconds for backend manager to wait for the storage backends to become available when JanusGraph is run in server mode",
             ConfigOption.Type.MASKABLE, Duration.ofMillis(60000L));
+//    public static final int SETUP_WAITTIME_DEFAULT = 60000;
+//    public static final String SETUP_WAITTIME_KEY = "setup-wait";
 
     /**
      * Default number of results to pull over the wire when iterating over a distributed
      * storage backend.
      * This is batch size of results to pull when iterating a result set.
      */
-    public static final ConfigOption<Integer> PAGE_SIZE = new ConfigOption<>(STORAGE_NS,"page-size",
+    public static final ConfigOption<Integer> PAGE_SIZE = new ConfigOption<Integer>(STORAGE_NS,"page-size",
             "JanusGraph break requests that may return many results from distributed storage backends " +
             "into a series of requests for small chunks/pages of results, where each chunk contains " +
             "up to this many elements.",
             ConfigOption.Type.MASKABLE, 100);
+//    public static final int PAGE_SIZE_DEFAULT = 100;
+//    public static final String PAGE_SIZE_KEY = "page-size";
 
-    public static final ConfigOption<Boolean> DROP_ON_CLEAR = new ConfigOption<>(STORAGE_NS, "drop-on-clear",
-        "Whether to drop the graph database (true) or delete rows (false) when clearing storage. " +
-            "Note that some backends always drop the graph database when clearing storage. Also note that indices are " +
-            "always dropped when clearing storage.",
-        ConfigOption.Type.MASKABLE, true);
 
     public static final ConfigNamespace LOCK_NS =
             new ConfigNamespace(STORAGE_NS, "lock", "Options for locking on eventually-consistent stores");
@@ -570,10 +598,11 @@ public class GraphDatabaseConfiguration {
     /**
      * Number of times the system attempts to acquire a lock before giving up and throwing an exception.
      */
-    public static final ConfigOption<Integer> LOCK_RETRY = new ConfigOption<>(LOCK_NS, "retries",
+    public static final ConfigOption<Integer> LOCK_RETRY = new ConfigOption<Integer>(LOCK_NS, "retries",
             "Number of times the system attempts to acquire a lock before giving up and throwing an exception",
             ConfigOption.Type.MASKABLE, 3);
-
+//    public static final String LOCK_RETRY_COUNT = "lock-retries";
+//    public static final int LOCK_RETRY_COUNT_DEFAULT = 3;
     /**
      * The number of milliseconds the system waits for a lock application to be acknowledged by the storage backend.
      * Also, the time waited at the end of all lock applications before verifying that the applications were successful.
@@ -584,6 +613,8 @@ public class GraphDatabaseConfiguration {
             "Also, the time waited at the end of all lock applications before verifying that the applications were successful. " +
             "This value should be a small multiple of the average consistent write time.",
             ConfigOption.Type.GLOBAL_OFFLINE, Duration.ofMillis(100L));
+//    public static final String LOCK_WAIT_MS = "lock-wait-time";
+//    public static final long LOCK_WAIT_MS_DEFAULT = 100;
 
     /**
      * Number of milliseconds after which a lock is considered to have expired. Lock applications that were not released
@@ -597,6 +628,8 @@ public class GraphDatabaseConfiguration {
             "This value should be larger than the maximum time a transaction can take in order to guarantee " +
             "that no correctly held applications are expired pre-maturely and as small as possible to avoid dead lock.",
             ConfigOption.Type.GLOBAL_OFFLINE, Duration.ofMillis(300 * 1000L));
+//    public static final String LOCK_EXPIRE_MS = "lock-expiry-time";
+//    public static final long LOCK_EXPIRE_MS_DEFAULT = 300 * 1000;
 
     /**
      * Whether to attempt to delete expired locks from the storage backend. True
@@ -606,22 +639,24 @@ public class GraphDatabaseConfiguration {
      *
      * @see #LOCK_BACKEND
      */
-    public static final ConfigOption<Boolean> LOCK_CLEAN_EXPIRED = new ConfigOption<>(LOCK_NS, "clean-expired",
+    public static final ConfigOption<Boolean> LOCK_CLEAN_EXPIRED = new ConfigOption<Boolean>(LOCK_NS, "clean-expired",
             "Whether to delete expired locks from the storage backend",
             ConfigOption.Type.MASKABLE, false);
 
     /**
      * Locker type to use.  The supported types are in {@link org.janusgraph.diskstorage.Backend}.
      */
-    public static final ConfigOption<String> LOCK_BACKEND = new ConfigOption<>(LOCK_NS, "backend",
+    public static final ConfigOption<String> LOCK_BACKEND = new ConfigOption<String>(LOCK_NS, "backend",
             "Locker type to use",
             ConfigOption.Type.GLOBAL_OFFLINE, "consistentkey");
+//    public static final String LOCK_BACKEND = "lock-backend";
+//    public static final String LOCK_BACKEND_DEFAULT = "consistentkey";
 
     /**
      * Configuration setting key for the local lock mediator prefix
      */
     public static final ConfigOption<String> LOCK_LOCAL_MEDIATOR_GROUP =
-            new ConfigOption<>(LOCK_NS, "local-mediator-group",
+            new ConfigOption<String>(LOCK_NS, "local-mediator-group",
             "This option determines the LocalLockMediator instance used for early detection of lock contention " +
             "between concurrent JanusGraph graph instances within the same process which are connected to the same " +
             "storage backend.  JanusGraph instances that have the same value for this variable will attempt to discover " +
@@ -634,16 +669,16 @@ public class GraphDatabaseConfiguration {
 
     public static final ConfigNamespace STORE_META_NS = new ConfigNamespace(STORAGE_NS,"meta","Meta data to include in storage backend retrievals",true);
 
-    public static final ConfigOption<Boolean> STORE_META_TIMESTAMPS = new ConfigOption<>(STORE_META_NS,"timestamps",
+    public static final ConfigOption<Boolean> STORE_META_TIMESTAMPS = new ConfigOption<Boolean>(STORE_META_NS,"timestamps",
             "Whether to include timestamps in retrieved entries for storage backends that automatically annotated entries with timestamps",
             ConfigOption.Type.GLOBAL, false);
 
-    public static final ConfigOption<Boolean> STORE_META_TTL = new ConfigOption<>(STORE_META_NS,"ttl",
-            "Whether to include ttl in retrieved entries for storage backends that support storage and retrieval of cell level TTL",
+    public static final ConfigOption<Boolean> STORE_META_TTL = new ConfigOption<Boolean>(STORE_META_NS,"ttl",
+            "Whether to include ttl in retrieved entries for storage backends that automatically annotated entries with timestamps",
             ConfigOption.Type.GLOBAL, false);
 
-    public static final ConfigOption<Boolean> STORE_META_VISIBILITY = new ConfigOption<>(STORE_META_NS,"visibility",
-            "Whether to include visibility in retrieved entries for storage backends that support cell level visibility",
+    public static final ConfigOption<Boolean> STORE_META_VISIBILITY = new ConfigOption<Boolean>(STORE_META_NS,"visibility",
+            "Whether to include visibility in retrieved entries for storage backends that automatically annotated entries with timestamps",
             ConfigOption.Type.GLOBAL, true);
 
 
@@ -652,7 +687,7 @@ public class GraphDatabaseConfiguration {
 
     public static final ConfigNamespace CLUSTER_NS = new ConfigNamespace(ROOT_NS,"cluster","Configuration options for multi-machine deployments");
 
-    /*
+    /**
      * Whether the id space should be partitioned for equal distribution of keys. If the keyspace is ordered, this needs to be
      * enabled to ensure an even distribution of data. If the keyspace is random/hashed, then enabling this only has the benefit
      * of de-congesting a single id pool in the database.
@@ -665,10 +700,20 @@ public class GraphDatabaseConfiguration {
 //            ConfigOption.Type.FIXED, false);
 
 
-    public static final ConfigOption<Integer> CLUSTER_MAX_PARTITIONS = new ConfigOption<>(CLUSTER_NS,"max-partitions",
+    public static final ConfigOption<Integer> CLUSTER_MAX_PARTITIONS = new ConfigOption<Integer>(CLUSTER_NS,"max-partitions",
             "The number of virtual partition blocks created in the partitioned graph. This should be larger than the maximum expected number of nodes" +
-                    " in the JanusGraph graph cluster. Must be greater than 1 and a power of 2.",
-            ConfigOption.Type.FIXED, 32, integer -> integer!=null && integer>1 && NumberUtil.isPowerOf2(integer));
+                    "in the JanusGraph graph cluster. Must be bigger than 1 and a power of 2.",
+            ConfigOption.Type.FIXED, 32, new Predicate<Integer>() {
+        @Override
+        public boolean apply(@Nullable Integer integer) {
+            return integer!=null && integer>1 && NumberUtil.isPowerOf2(integer);
+        }
+    });
+
+ // ################ PARTITIONING ###########################
+    // ################################################
+
+    public static final ConfigNamespace PARTITIONING_NS = new ConfigNamespace(ROOT_NS,"partitioning","Graph partitioning configuration options for multi-machine deployments");
 
 
 
@@ -677,35 +722,31 @@ public class GraphDatabaseConfiguration {
 
     public static final ConfigNamespace IDS_NS = new ConfigNamespace(ROOT_NS,"ids","General configuration options for graph element IDs");
 
+//    public static final String IDS_NAMESPACE = "ids";
+
     /**
      * Size of the block to be acquired. Larger block sizes require fewer block applications but also leave a larger
      * fraction of the id pool occupied and potentially lost. For write heavy applications, larger block sizes should
      * be chosen.
      */
-    public static final ConfigOption<Integer> IDS_BLOCK_SIZE = new ConfigOption<>(IDS_NS,"block-size",
+    public static final ConfigOption<Integer> IDS_BLOCK_SIZE = new ConfigOption<Integer>(IDS_NS,"block-size",
             "Globally reserve graph element IDs in chunks of this size.  Setting this too low will make commits " +
             "frequently block on slow reservation requests.  Setting it too high will result in IDs wasted when a " +
             "graph instance shuts down with reserved but mostly-unused blocks.",
             ConfigOption.Type.GLOBAL_OFFLINE, 10000);
-
-    /**
-     * The name of the ID store. Currently this defaults to janusgraph_ids. You can override the ID store to
-     * facilitate migration from JanusGraph's predecessor, Titan. Previously, this KCVStore was named titan_ids.
-     */
-    public static final ConfigOption<String> IDS_STORE_NAME = new ConfigOption<>(IDS_NS, "store-name",
-        "The name of the ID KCVStore. IDS_STORE_NAME is meant to be used only for backward compatibility with Titan, " +
-            "and should not be used explicitly in normal operations or in new graphs.",
-        ConfigOption.Type.GLOBAL_OFFLINE, JanusGraphConstants.JANUSGRAPH_ID_STORE_NAME);
-
+//    public static final String IDS_BLOCK_SIZE_KEY = "block-size";
+//    public static final int IDS_BLOCK_SIZE_DEFAULT = 10000;
 
     /**
      * If flush ids is enabled, vertices and edges are assigned ids immediately upon creation. If not, then ids are only
      * assigned when the transaction is committed.
      */
-    public static final ConfigOption<Boolean> IDS_FLUSH = new ConfigOption<>(IDS_NS,"flush",
+    public static final ConfigOption<Boolean> IDS_FLUSH = new ConfigOption<Boolean>(IDS_NS,"flush",
             "When true, vertices and edges are assigned IDs immediately upon creation.  When false, " +
             "IDs are assigned only when the transaction commits. Must be disabled for graph partitioning to work.",
             ConfigOption.Type.MASKABLE, true);
+//    public static final String IDS_FLUSH_KEY = "flush";
+//    public static final boolean IDS_FLUSH_DEFAULT = true;
 
     /**
      * The number of milliseconds that the JanusGraph id pool manager will wait before giving up on allocating a new block
@@ -715,21 +756,26 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> IDS_RENEW_TIMEOUT = new ConfigOption<>(IDS_NS,"renew-timeout",
             "The number of milliseconds that the JanusGraph id pool manager will wait before giving up on allocating a new block of ids",
             ConfigOption.Type.MASKABLE, Duration.ofMillis(120000L));
+//    public static final String IDS_RENEW_TIMEOUT_KEY = "renew-timeout";
+//    public static final long IDS_RENEW_TIMEOUT_DEFAULT = 60 * 1000; // 1 minute
 
     /**
      * Configures when the id pool manager will attempt to allocate a new id block. When all but the configured percentage
      * of the current block is consumed, a new block will be allocated. Larger values should be used if a lot of ids
      * are allocated in a short amount of time. Value must be in (0,1].
      */
-    public static final ConfigOption<Double> IDS_RENEW_BUFFER_PERCENTAGE = new ConfigOption<>(IDS_NS,"renew-percentage",
+    public static final ConfigOption<Double> IDS_RENEW_BUFFER_PERCENTAGE = new ConfigOption<Double>(IDS_NS,"renew-percentage",
             "When the most-recently-reserved ID block has only this percentage of its total IDs remaining " +
             "(expressed as a value between 0 and 1), JanusGraph asynchronously begins reserving another block. " +
             "This helps avoid transaction commits waiting on ID reservation even if the block size is relatively small.",
             ConfigOption.Type.MASKABLE, 0.3);
+//    public static final String IDS_RENEW_BUFFER_PERCENTAGE_KEY = "renew-percentage";
+//    public static final double IDS_RENEW_BUFFER_PERCENTAGE_DEFAULT = 0.3; // 30 %
 
     // ################ IDAUTHORITY ###################
     // ################################################
 
+    //    public static final String STORAGE_NAMESPACE = "storage";
     public static final ConfigNamespace IDAUTHORITY_NS = new ConfigNamespace(IDS_NS,"authority","Configuration options for graph element ID reservation/allocation");
 
     /**
@@ -739,14 +785,16 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> IDAUTHORITY_WAIT = new ConfigOption<>(IDAUTHORITY_NS,"wait-time",
             "The number of milliseconds the system waits for an ID block reservation to be acknowledged by the storage backend",
             ConfigOption.Type.GLOBAL_OFFLINE, Duration.ofMillis(300L));
+//    public static final String IDAUTHORITY_WAIT_MS_KEY = "idauthority-wait-time";
+//    public static final long IDAUTHORITY_WAIT_MS_DEFAULT = 300;
 
     /**
      * Sets the strategy used by {@link ConsistentKeyIDAuthority} to avoid
-     * contention in ID block allocation between JanusGraph instances concurrently
+     * contention in ID block alloction between JanusGraph instances concurrently
      * sharing a single distributed storage backend.
      */
     // This is set to GLOBAL_OFFLINE as opposed to MASKABLE or GLOBAL to prevent mixing both global-randomized and local-manual modes within the same cluster
-    public static final ConfigOption<ConflictAvoidanceMode> IDAUTHORITY_CONFLICT_AVOIDANCE = new ConfigOption<>(IDAUTHORITY_NS,"conflict-avoidance-mode",
+    public static final ConfigOption<ConflictAvoidanceMode> IDAUTHORITY_CONFLICT_AVOIDANCE = new ConfigOption<ConflictAvoidanceMode>(IDAUTHORITY_NS,"conflict-avoidance-mode",
             "This setting helps separate JanusGraph instances sharing a single graph storage backend avoid contention when reserving ID blocks, " +
             "increasing overall throughput.",
             ConfigOption.Type.GLOBAL_OFFLINE, ConflictAvoidanceMode.class, ConflictAvoidanceMode.NONE);
@@ -756,7 +804,7 @@ public class GraphDatabaseConfiguration {
      * configured, it picks a random unique ID marker and attempts to allocate IDs
      * from a partition using the marker. The ID markers function as
      * subpartitions with each ID partition. If the attempt fails because that
-     * partition + unique id combination is already completely allocated, then
+     * partition + uniqueid combination is already completely allocated, then
      * JanusGraph will generate a new random unique ID and try again. This controls
      * the maximum number of attempts before JanusGraph assumes the entire partition
      * is allocated and fails the request. It must be set to at least 1 and
@@ -765,9 +813,11 @@ public class GraphDatabaseConfiguration {
      * This setting has no effect when {@link #IDAUTHORITY_CONFLICT_AVOIDANCE} is not configured to
      * {@link org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode#GLOBAL_AUTO}.
      */
-    public static final ConfigOption<Integer> IDAUTHORITY_CAV_RETRIES = new ConfigOption<>(IDAUTHORITY_NS,"randomized-conflict-avoidance-retries",
+    public static final ConfigOption<Integer> IDAUTHORITY_CAV_RETRIES = new ConfigOption<Integer>(IDAUTHORITY_NS,"randomized-conflict-avoidance-retries",
             "Number of times the system attempts ID block reservations with random conflict avoidance tags before giving up and throwing an exception",
             ConfigOption.Type.MASKABLE, 5);
+//    public static final String IDAUTHORITY_RETRY_COUNT_KEY = "idauthority-retries";
+//    public static final int IDAUTHORITY_RETRY_COUNT_DEFAULT = 20;
 
     /**
      * Configures the number of bits of JanusGraph assigned ids that are reserved for a unique id marker that
@@ -781,9 +831,14 @@ public class GraphDatabaseConfiguration {
      * {@link org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode#NONE}. However, note that while the
      * conflict avoidance mode can be changed, this setting cannot ever be changed and must therefore be considered a priori.
      */
-    public static final ConfigOption<Integer> IDAUTHORITY_CAV_BITS = new ConfigOption<>(IDAUTHORITY_NS,"conflict-avoidance-tag-bits",
+    public static final ConfigOption<Integer> IDAUTHORITY_CAV_BITS = new ConfigOption<Integer>(IDAUTHORITY_NS,"conflict-avoidance-tag-bits",
             "Configures the number of bits of JanusGraph-assigned element IDs that are reserved for the conflict avoidance tag",
-            ConfigOption.Type.FIXED, 4 , uniqueIdBitWidth -> uniqueIdBitWidth>=0 && uniqueIdBitWidth<=16);
+            ConfigOption.Type.FIXED, 4 , new Predicate<Integer>() {
+        @Override
+        public boolean apply(@Nullable Integer uniqueIdBitWidth) {
+            return uniqueIdBitWidth>=0 && uniqueIdBitWidth<=16;
+        }
+    });
 
     /**
      * Unique id marker to be used by this JanusGraph instance when allocating ids. The unique id marker
@@ -796,7 +851,7 @@ public class GraphDatabaseConfiguration {
      * This setting has no effect when {@link #IDAUTHORITY_CONFLICT_AVOIDANCE} is configured to
      * {@link org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode#NONE}.
      */
-    public static final ConfigOption<Integer> IDAUTHORITY_CAV_TAG = new ConfigOption<>(IDAUTHORITY_NS,"conflict-avoidance-tag",
+    public static final ConfigOption<Integer> IDAUTHORITY_CAV_TAG = new ConfigOption<Integer>(IDAUTHORITY_NS,"conflict-avoidance-tag",
             "Conflict avoidance tag to be used by this JanusGraph instance when allocating IDs",
             ConfigOption.Type.LOCAL, 0);
 
@@ -804,13 +859,15 @@ public class GraphDatabaseConfiguration {
     // ############## External Index ######################
     // ################################################
 
+    public static final String INDEX_NAMESPACE = "index";
+
     public static final ConfigNamespace INDEX_NS = new ConfigNamespace(ROOT_NS,"index","Configuration options for the individual indexing backends",true);
 
 
     /**
      * Define the indexing backed to use for index support
      */
-    public static final ConfigOption<String> INDEX_BACKEND = new ConfigOption<>(INDEX_NS,"backend",
+    public static final ConfigOption<String> INDEX_BACKEND = new ConfigOption<String>(INDEX_NS,"backend",
             "The indexing backend used to extend and optimize JanusGraph's query functionality. " +
             "This setting is optional.  JanusGraph can use multiple heterogeneous index backends.  " +
             "Hence, this option can appear more than once, so long as the user-defined name between " +
@@ -820,34 +877,35 @@ public class GraphDatabaseConfiguration {
             "(shorthands: " + Joiner.on(", ").join(StandardIndexProvider.getAllShorthands()) + ") " +
             "or to the full package and classname of a custom/third-party IndexProvider implementation.",
             ConfigOption.Type.GLOBAL_OFFLINE, "elasticsearch");
+//    public static final String INDEX_BACKEND_KEY = "backend";
+//    public static final String INDEX_BACKEND_DEFAULT = "lucene";
 
-    public static final ConfigOption<String> INDEX_DIRECTORY = new ConfigOption<>(INDEX_NS,"directory",
+    public static final ConfigOption<String> INDEX_DIRECTORY = new ConfigOption<String>(INDEX_NS,"directory",
             "Directory to store index data locally",
             ConfigOption.Type.MASKABLE, String.class);
 
-    public static final ConfigOption<String> INDEX_NAME = new ConfigOption<>(INDEX_NS,"index-name",
+    public static final ConfigOption<String> INDEX_NAME = new ConfigOption<String>(INDEX_NS,"index-name",
             "Name of the index if required by the indexing backend",
             ConfigOption.Type.GLOBAL_OFFLINE, "janusgraph");
 
-    public static final ConfigOption<String[]> INDEX_HOSTS = new ConfigOption<>(INDEX_NS,"hostname",
+    public static final ConfigOption<String[]> INDEX_HOSTS = new ConfigOption<String[]>(INDEX_NS,"hostname",
             "The hostname or comma-separated list of hostnames of index backend servers.  " +
             "This is only applicable to some index backends, such as elasticsearch and solr.",
             ConfigOption.Type.MASKABLE, new String[]{NetworkUtil.getLoopbackAddress()});
 
-    public static final ConfigOption<Integer> INDEX_PORT = new ConfigOption<>(INDEX_NS,"port",
+    public static final ConfigOption<Integer> INDEX_PORT = new ConfigOption<Integer>(INDEX_NS,"port",
             "The port on which to connect to index backend servers",
             ConfigOption.Type.MASKABLE, Integer.class);
 
-    public static final ConfigOption<String> INDEX_CONF_FILE = new ConfigOption<>(INDEX_NS,"conf-file",
+    public static final ConfigOption<String> INDEX_CONF_FILE = new ConfigOption<String>(INDEX_NS,"conf-file",
             "Path to a configuration file for those indexing backends that require/support a separate config file",
             ConfigOption.Type.MASKABLE, String.class);
 
-    public static final ConfigOption<Integer> INDEX_MAX_RESULT_SET_SIZE = new ConfigOption<>(INDEX_NS, "max-result-set-size",
-            "Maximum number of results to return if no limit is specified. For index backends that support scrolling, it represents " +
-                    "the number of results in each batch",
-            ConfigOption.Type.MASKABLE, 50);
+    public static final ConfigOption<Integer> INDEX_MAX_RESULT_SET_SIZE = new ConfigOption<Integer>(INDEX_NS, "max-result-set-size",
+            "Maxium number of results to return if no limit is specified",
+            ConfigOption.Type.MASKABLE, 100000);
 
-    public static final ConfigOption<Boolean> INDEX_NAME_MAPPING = new ConfigOption<>(INDEX_NS,"map-name",
+    public static final ConfigOption<Boolean> INDEX_NAME_MAPPING = new ConfigOption<Boolean>(INDEX_NS,"map-name",
             "Whether to use the name of the property key as the field name in the index. It must be ensured, that the" +
                     "indexed property key names are valid field names. Renaming the property key will NOT rename the field " +
                     "and its the developers responsibility to avoid field collisions.",
@@ -866,19 +924,19 @@ public class GraphDatabaseConfiguration {
 
     public static final Duration TRANSACTION_LOG_DEFAULT_TTL = Duration.ofDays(7);
 
-    public static final ConfigOption<String> LOG_BACKEND = new ConfigOption<>(LOG_NS,"backend",
+    public static final ConfigOption<String> LOG_BACKEND = new ConfigOption<String>(LOG_NS,"backend",
             "Define the log backed to use",
             ConfigOption.Type.GLOBAL_OFFLINE, "default");
 
-    public static final ConfigOption<Integer> LOG_NUM_BUCKETS = new ConfigOption<>(LOG_NS,"num-buckets",
+    public static final ConfigOption<Integer> LOG_NUM_BUCKETS = new ConfigOption<Integer>(LOG_NS,"num-buckets",
             "The number of buckets to split log entries into for load balancing",
             ConfigOption.Type.GLOBAL_OFFLINE, 1, ConfigOption.positiveInt());
 
-    public static final ConfigOption<Integer> LOG_SEND_BATCH_SIZE = new ConfigOption<>(LOG_NS,"send-batch-size",
+    public static final ConfigOption<Integer> LOG_SEND_BATCH_SIZE = new ConfigOption<Integer>(LOG_NS,"send-batch-size",
             "Maximum number of log messages to batch up for sending for logging implementations that support batch sending",
             ConfigOption.Type.MASKABLE, 256, ConfigOption.positiveInt());
 
-    public static final ConfigOption<Integer> LOG_READ_BATCH_SIZE = new ConfigOption<>(LOG_NS,"read-batch-size",
+    public static final ConfigOption<Integer> LOG_READ_BATCH_SIZE = new ConfigOption<Integer>(LOG_NS,"read-batch-size",
             "Maximum number of log messages to read at a time for logging implementations that read messages in batches",
             ConfigOption.Type.MASKABLE, 1024, ConfigOption.positiveInt());
 
@@ -890,7 +948,7 @@ public class GraphDatabaseConfiguration {
             "Time in ms between message readings from the backend for this logging implementations that read message in batch",
             ConfigOption.Type.MASKABLE, Duration.ofMillis(5000L));
 
-    public static final ConfigOption<Integer> LOG_READ_THREADS = new ConfigOption<>(LOG_NS,"read-threads",
+    public static final ConfigOption<Integer> LOG_READ_THREADS = new ConfigOption<Integer>(LOG_NS,"read-threads",
             "Number of threads to be used in reading and processing log messages",
             ConfigOption.Type.MASKABLE, 1, ConfigOption.positiveInt());
 
@@ -898,7 +956,13 @@ public class GraphDatabaseConfiguration {
             "Sets a TTL on all log entries, meaning" +
                     "that all entries added to this log expire after the configured amount of time. Requires" +
                     "that the log implementation supports TTL.",
-            ConfigOption.Type.GLOBAL, Duration.class, sd -> null != sd && !sd.isZero());
+            ConfigOption.Type.GLOBAL, Duration.class, new Predicate<Duration>() {
+
+        @Override
+        public boolean apply(@Nullable Duration sd) {
+            return null != sd && !sd.isZero();
+        }
+    });
 
     // ############## Attributes ######################
     // ################################################
@@ -909,12 +973,14 @@ public class GraphDatabaseConfiguration {
 
     public static final String ATTRIBUTE_PREFIX = "attribute";
 
-    public static final ConfigOption<String> CUSTOM_ATTRIBUTE_CLASS = new ConfigOption<>(CUSTOM_ATTRIBUTE_NS,"attribute-class",
+    public static final ConfigOption<String> CUSTOM_ATTRIBUTE_CLASS = new ConfigOption<String>(CUSTOM_ATTRIBUTE_NS,"attribute-class",
             "Class of the custom attribute to be registered",
             ConfigOption.Type.GLOBAL_OFFLINE, String.class);
-    public static final ConfigOption<String> CUSTOM_SERIALIZER_CLASS = new ConfigOption<>(CUSTOM_ATTRIBUTE_NS,"serializer-class",
+    public static final ConfigOption<String> CUSTOM_SERIALIZER_CLASS = new ConfigOption<String>(CUSTOM_ATTRIBUTE_NS,"serializer-class",
             "Class of the custom attribute serializer to be registered",
             ConfigOption.Type.GLOBAL_OFFLINE, String.class);
+//    private static final String ATTRIBUTE_PREFIX = "attribute";
+//    private static final String SERIALIZER_PREFIX = "serializer";
 
     // ################ Metrics #######################
     // ################################################
@@ -922,15 +988,18 @@ public class GraphDatabaseConfiguration {
     /**
      * Configuration key prefix for Metrics.
      */
+//    public static final String METRICS_NAMESPACE = "metrics";
     public static final ConfigNamespace METRICS_NS = new ConfigNamespace(ROOT_NS,"metrics","Configuration options for metrics reporting");
 
     /**
      * Whether to enable basic timing and operation count monitoring on backend
      * methods using the {@code com.codahale.metrics} package.
      */
-    public static final ConfigOption<Boolean> BASIC_METRICS = new ConfigOption<>(METRICS_NS,"enabled",
+    public static final ConfigOption<Boolean> BASIC_METRICS = new ConfigOption<Boolean>(METRICS_NS,"enabled",
             "Whether to enable basic timing and operation count monitoring on backend",
             ConfigOption.Type.MASKABLE, false);
+//    public static final String BASIC_METRICS = "enable-basic-metrics";
+//    public static final boolean BASIC_METRICS_DEFAULT = false;
 
     /**
      * This is the prefix used outside of a graph database configuration, or for
@@ -952,9 +1021,10 @@ public class GraphDatabaseConfiguration {
      * <p/>
      * Default = {@literal #METRICS_PREFIX_DEFAULT}
      */
-    public static final ConfigOption<String> METRICS_PREFIX = new ConfigOption<>(METRICS_NS,"prefix",
+    public static final ConfigOption<String> METRICS_PREFIX = new ConfigOption<String>(METRICS_NS,"prefix",
             "The default name prefix for Metrics reported by JanusGraph.",
             ConfigOption.Type.MASKABLE, METRICS_PREFIX_DEFAULT);
+//    public static final String METRICS_PREFIX_KEY = "prefix";
 
     /**
      * Whether to aggregate measurements for the edge store, vertex index, edge
@@ -972,9 +1042,13 @@ public class GraphDatabaseConfiguration {
      * <p/>
      * This option has no effect when {@link #BASIC_METRICS} is false.
      */
-    public static final ConfigOption<Boolean> METRICS_MERGE_STORES = new ConfigOption<>(METRICS_NS,"merge-stores",
+    public static final ConfigOption<Boolean> METRICS_MERGE_STORES = new ConfigOption<Boolean>(METRICS_NS,"merge-stores",
             "Whether to aggregate measurements for the edge store, vertex index, edge index, and ID store",
             ConfigOption.Type.MASKABLE, true);
+//    public static final String MERGE_BASIC_METRICS_KEY = "merge-basic-metrics";
+//    public static final boolean MERGE_BASIC_METRICS_DEFAULT = true;
+
+
 
     public static final ConfigNamespace METRICS_CONSOLE_NS = new ConfigNamespace(METRICS_NS,"console","Configuration options for metrics reporting to console");
 
@@ -986,6 +1060,8 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> METRICS_CONSOLE_INTERVAL = new ConfigOption<>(METRICS_CONSOLE_NS,"interval",
             "Time between Metrics reports printing to the console, in milliseconds",
             ConfigOption.Type.MASKABLE, Duration.class);
+//    public static final String METRICS_CONSOLE_INTERVAL_KEY = "console.interval";
+//    public static final Long METRICS_CONSOLE_INTERVAL_DEFAULT = null;
 
     public static final ConfigNamespace METRICS_CSV_NS = new ConfigNamespace(METRICS_NS,"csv","Configuration options for metrics reporting to CSV file");
 
@@ -996,6 +1072,8 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> METRICS_CSV_INTERVAL = new ConfigOption<>(METRICS_CSV_NS,"interval",
             "Time between dumps of CSV files containing Metrics data, in milliseconds",
             ConfigOption.Type.MASKABLE, Duration.class);
+//    public static final String METRICS_CSV_INTERVAL_KEY = "csv.interval";
+//    public static final Long METRICS_CSV_INTERVAL_DEFAULT = null;
 
     /**
      * Metrics CSV output directory. It will be created if it doesn't already
@@ -1003,26 +1081,33 @@ public class GraphDatabaseConfiguration {
      * non-null. This option has no effect if {@code #METRICS_CSV_INTERVAL} is
      * null.
      */
-    public static final ConfigOption<String> METRICS_CSV_DIR = new ConfigOption<>(METRICS_CSV_NS,"directory",
+    public static final ConfigOption<String> METRICS_CSV_DIR = new ConfigOption<String>(METRICS_CSV_NS,"directory",
             "Metrics CSV output directory",
             ConfigOption.Type.MASKABLE, String.class);
+
+//    public static final String METRICS_CSV_DIR_KEY = "csv.dir";
+//    public static final String METRICS_CSV_DIR_DEFAULT = null;
 
     public static final ConfigNamespace METRICS_JMX_NS = new ConfigNamespace(METRICS_NS,"jmx","Configuration options for metrics reporting through JMX");
 
     /**
      * Whether to report Metrics through a JMX MBean.
      */
-    public static final ConfigOption<Boolean> METRICS_JMX_ENABLED = new ConfigOption<>(METRICS_JMX_NS,"enabled",
+    public static final ConfigOption<Boolean> METRICS_JMX_ENABLED = new ConfigOption<Boolean>(METRICS_JMX_NS,"enabled",
             "Whether to report Metrics through a JMX MBean",
             ConfigOption.Type.MASKABLE, false);
+//    public static final String METRICS_JMX_ENABLED_KEY = "jmx.enabled";
+//    public static final boolean METRICS_JMX_ENABLED_DEFAULT = false;
 
     /**
      * The JMX domain in which to report Metrics. If null, then Metrics applies
      * its default value.
      */
-    public static final ConfigOption<String> METRICS_JMX_DOMAIN = new ConfigOption<>(METRICS_JMX_NS,"domain",
+    public static final ConfigOption<String> METRICS_JMX_DOMAIN = new ConfigOption<String>(METRICS_JMX_NS,"domain",
             "The JMX domain in which to report Metrics",
             ConfigOption.Type.MASKABLE, String.class);
+//    public static final String METRICS_JMX_DOMAIN_KEY = "jmx.domain";
+//    public static final String METRICS_JMX_DOMAIN_DEFAULT = null;
 
     /**
      * The JMX agentId through which to report Metrics. Calling
@@ -1030,11 +1115,15 @@ public class GraphDatabaseConfiguration {
      * return exactly one {@code MBeanServer} at runtime. If null, then Metrics
      * applies its default value.
      */
-    public static final ConfigOption<String> METRICS_JMX_AGENTID = new ConfigOption<>(METRICS_JMX_NS,"agentid",
+    public static final ConfigOption<String> METRICS_JMX_AGENTID = new ConfigOption<String>(METRICS_JMX_NS,"agentid",
             "The JMX agentId used by Metrics",
             ConfigOption.Type.MASKABLE, String.class);
 
+//    public static final String METRICS_JMX_AGENTID_KEY = "jmx.agentid";
+//    public static final String METRICS_JMX_AGENTID_DEFAULT = null;
+
     public static final ConfigNamespace METRICS_SLF4J_NS = new ConfigNamespace(METRICS_NS,"slf4j","Configuration options for metrics reporting through slf4j");
+
 
     /**
      * Metrics Slf4j reporter interval in milliseconds. Leaving this
@@ -1043,6 +1132,8 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> METRICS_SLF4J_INTERVAL = new ConfigOption<>(METRICS_SLF4J_NS,"interval",
             "Time between slf4j logging reports of Metrics data, in milliseconds",
             ConfigOption.Type.MASKABLE, Duration.class);
+//    public static final String METRICS_SLF4J_INTERVAL_KEY = "slf4j.interval";
+//    public static final Long METRICS_SLF4J_INTERVAL_DEFAULT = null;
 
     /**
      * The complete name of the Logger through which Metrics will report via
@@ -1050,9 +1141,12 @@ public class GraphDatabaseConfiguration {
      * {@link LoggerFactory#getLogger(String)} with the configured value as the
      * argument. If null, then Metrics will use its default Slf4j logger.
      */
-    public static final ConfigOption<String> METRICS_SLF4J_LOGGER = new ConfigOption<>(METRICS_SLF4J_NS,"logger",
+    public static final ConfigOption<String> METRICS_SLF4J_LOGGER = new ConfigOption<String>(METRICS_SLF4J_NS,"logger",
             "The complete name of the Logger through which Metrics will report via Slf4j",
             ConfigOption.Type.MASKABLE, String.class);
+
+//    public static final String METRICS_SLF4J_LOGGER_KEY = "slf4j.logger";
+//    public static final String METRICS_SLF4J_LOGGER_DEFAULT = null;
 
     /**
      * The configuration namespace within {@link #METRICS_NS} for Ganglia.
@@ -1064,9 +1158,11 @@ public class GraphDatabaseConfiguration {
      * Ganglia data. Setting this config key has no effect unless
      * {@link #GANGLIA_INTERVAL} is also set.
      */
-    public static final ConfigOption<String> GANGLIA_HOST_OR_GROUP = new ConfigOption<>(METRICS_GANGLIA_NS,"hostname",
+    public static final ConfigOption<String> GANGLIA_HOST_OR_GROUP = new ConfigOption<String>(METRICS_GANGLIA_NS,"hostname",
             "The unicast host or multicast group name to which Metrics will send Ganglia data",
             ConfigOption.Type.MASKABLE, String.class);
+//
+//    public static final String GANGLIA_HOST_OR_GROUP_KEY = "hostname";
 
     /**
      * The number of milliseconds to wait between sending Metrics data to the
@@ -1077,13 +1173,17 @@ public class GraphDatabaseConfiguration {
             "The number of milliseconds to wait between sending Metrics data to Ganglia",
             ConfigOption.Type.MASKABLE, Duration.class);
 
+//    public static final String GANGLIA_INTERVAL_KEY = "interval";
+
     /**
      * The port to which Ganglia data are sent.
      * <p/>
      */
-    public static final ConfigOption<Integer> GANGLIA_PORT = new ConfigOption<>(METRICS_GANGLIA_NS,"port",
+    public static final ConfigOption<Integer> GANGLIA_PORT = new ConfigOption<Integer>(METRICS_GANGLIA_NS,"port",
             "The port to which Ganglia data are sent",
             ConfigOption.Type.MASKABLE, 8649);
+//    public static final String GANGLIA_PORT = "port";
+//    public static final int GANGLIA_PORT_DEFAULT = 8649;
 
     /**
      * Whether to interpret {@link #GANGLIA_HOST_OR_GROUP} as a unicast or
@@ -1091,9 +1191,17 @@ public class GraphDatabaseConfiguration {
      * or the string "unicast".
      * <p/>
      */
-    public static final ConfigOption<String> GANGLIA_ADDRESSING_MODE = new ConfigOption<>(METRICS_GANGLIA_NS,"addressing-mode",
+    public static final ConfigOption<String> GANGLIA_ADDRESSING_MODE = new ConfigOption<String>(METRICS_GANGLIA_NS,"addressing-mode",
             "Whether to communicate to Ganglia via uni- or multicast",
-            ConfigOption.Type.MASKABLE, "unicast", s -> s!=null && s.equalsIgnoreCase("unicast") || s.equalsIgnoreCase("multicast"));
+            ConfigOption.Type.MASKABLE, "unicast", new Predicate<String>() {
+        @Override
+        public boolean apply(@Nullable String s) {
+            return s!=null && s.equalsIgnoreCase("unicast") || s.equalsIgnoreCase("multicast");
+        }
+    });
+
+//    public static final String GANGLIA_ADDRESSING_MODE_KEY = "addressing-mode";
+//    public static final String GANGLIA_ADDRESSING_MODE_DEFAULT = "unicast";
 
     /**
      * The multicast TTL to set on outgoing Ganglia datagrams. This has no
@@ -1102,18 +1210,23 @@ public class GraphDatabaseConfiguration {
      * This is a TTL in the multicast protocol sense (number of routed hops),
      * not a timestamp sense.
      */
-    public static final ConfigOption<Integer> GANGLIA_TTL = new ConfigOption<>(METRICS_GANGLIA_NS,"ttl",
+    public static final ConfigOption<Integer> GANGLIA_TTL = new ConfigOption<Integer>(METRICS_GANGLIA_NS,"ttl",
             "The multicast TTL to set on outgoing Ganglia datagrams",
             ConfigOption.Type.MASKABLE, 1);
+
+//    public static final String GANGLIA_TTL_KEY = "ttl";
+//    public static final int GANGLIA_TTL_DEFAULT = 1;
 
     /**
      * Whether to send data to Ganglia in the 3.1 protocol format (true) or the
      * 3.0 protocol format (false).
      * <p/>
      */
-    public static final ConfigOption<Boolean> GANGLIA_USE_PROTOCOL_31 = new ConfigOption<>(METRICS_GANGLIA_NS,"protocol-31",
+    public static final ConfigOption<Boolean> GANGLIA_USE_PROTOCOL_31 = new ConfigOption<Boolean>(METRICS_GANGLIA_NS,"protocol-31",
             "Whether to send data to Ganglia in the 3.1 protocol format",
             ConfigOption.Type.MASKABLE, true);
+//    public static final String GANGLIA_USE_PROTOCOL_31_KEY = "protocol-31";
+//    public static final boolean GANGLIA_USE_PROTOCOL_31_DEFAULT = true;
 
     /**
      * The host UUID to set on outgoing Ganglia datagrams. If null, no UUID is
@@ -1122,23 +1235,32 @@ public class GraphDatabaseConfiguration {
      * See https://github.com/ganglia/monitor-core/wiki/UUIDSources
      * <p/>
      */
-    public static final ConfigOption<String> GANGLIA_UUID = new ConfigOption<>(METRICS_GANGLIA_NS,"uuid",
+    public static final ConfigOption<String> GANGLIA_UUID = new ConfigOption<String>(METRICS_GANGLIA_NS,"uuid",
             "The host UUID to set on outgoing Ganglia datagrams. " +
             "See https://github.com/ganglia/monitor-core/wiki/UUIDSources for information about this setting.",
             ConfigOption.Type.LOCAL, String.class);
+//    public static final String GANGLIA_UUID_KEY = "uuid";
+//    public static final UUID GANGLIA_UUID_DEFAULT = null;
 
     /**
      * If non-null, it must be a valid Gmetric spoof string formatted as an
      * IP:hostname pair. If null, Ganglia will automatically determine the IP
      * and hostname to set on outgoing datagrams.
      * <p/>
-     * See https://github.com/ganglia/monitor-core/wiki/Gmetric-Spoofing
+     * See http://sourceforge.net/apps/trac/ganglia/wiki/gmetric_spoofing
      * <p/>
      */
     public static final ConfigOption<String> GANGLIA_SPOOF = new ConfigOption<String>(METRICS_GANGLIA_NS,"spoof",
             "If non-null, it must be a valid Gmetric spoof string formatted as an IP:hostname pair. " +
-            "See https://github.com/ganglia/monitor-core/wiki/Gmetric-Spoofing for information about this setting.",
-            ConfigOption.Type.MASKABLE, String.class, s -> s!=null && 0 < s.indexOf(':'));
+            "See http://sourceforge.net/apps/trac/ganglia/wiki/gmetric_spoofing for information about this setting.",
+            ConfigOption.Type.MASKABLE, String.class, new Predicate<String>() {
+        @Override
+        public boolean apply(@Nullable String s) {
+            return s!=null && 0 < s.indexOf(':');
+        }
+    });
+//    public static final String GANGLIA_SPOOF_KEY = "spoof";
+//    public static final String GANGLIA_SPOOF_DEFAULT = null;
 
     /**
      * The configuration namespace within {@link #METRICS_NS} for
@@ -1146,14 +1268,17 @@ public class GraphDatabaseConfiguration {
      */
     public static final ConfigNamespace METRICS_GRAPHITE_NS = new ConfigNamespace(METRICS_NS,"graphite","Configuration options for metrics reporting through Graphite");
 
+//    public static final String GRAPHITE_NAMESPACE = "graphite";
+
     /**
      * The hostname to receive Graphite plaintext protocol metric data. Setting
      * this config key has no effect unless {@link #GRAPHITE_INTERVAL} is also
      * set.
      */
-    public static final ConfigOption<String> GRAPHITE_HOST = new ConfigOption<>(METRICS_GRAPHITE_NS,"hostname",
+    public static final ConfigOption<String> GRAPHITE_HOST = new ConfigOption<String>(METRICS_GRAPHITE_NS,"hostname",
             "The hostname to receive Graphite plaintext protocol metric data",
             ConfigOption.Type.MASKABLE, String.class);
+//    public static final String GRAPHITE_HOST_KEY = "hostname";
 
     /**
      * The number of milliseconds to wait between sending Metrics data to the
@@ -1163,14 +1288,17 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<Duration> GRAPHITE_INTERVAL = new ConfigOption<>(METRICS_GRAPHITE_NS,"interval",
             "The number of milliseconds to wait between sending Metrics data",
             ConfigOption.Type.MASKABLE, Duration.class);
+//    public static final String GRAPHITE_INTERVAL_KEY = "interval";
 
     /**
      * The port to which Graphite data are sent.
      * <p/>
      */
-    public static final ConfigOption<Integer> GRAPHITE_PORT = new ConfigOption<>(METRICS_GRAPHITE_NS,"port",
+    public static final ConfigOption<Integer> GRAPHITE_PORT = new ConfigOption<Integer>(METRICS_GRAPHITE_NS,"port",
             "The port to which Graphite data are sent",
             ConfigOption.Type.MASKABLE, 2003);
+//    public static final String GRAPHITE_PORT_KEY = "port";
+//    public static final int GRAPHITE_PORT_DEFAULT = 2003;
 
     /**
      * A Graphite-specific prefix for reported metrics. If non-null, Metrics
@@ -1178,14 +1306,19 @@ public class GraphDatabaseConfiguration {
      * Graphite.
      * <p/>
      */
-    public static final ConfigOption<String> GRAPHITE_PREFIX = new ConfigOption<>(METRICS_GRAPHITE_NS,"prefix",
+    public static final ConfigOption<String> GRAPHITE_PREFIX = new ConfigOption<String>(METRICS_GRAPHITE_NS,"prefix",
             "A Graphite-specific prefix for reported metrics",
             ConfigOption.Type.MASKABLE, String.class);
+
+
+//    public static final String GRAPHITE_PREFIX_KEY = "prefix";
+//    public static final String GRAPHITE_PREFIX_DEFAULT = null;
+
 
     public static final ConfigNamespace GREMLIN_NS = new ConfigNamespace(ROOT_NS,"gremlin",
             "Gremlin configuration options");
 
-    public static final ConfigOption<String> GREMLIN_GRAPH = new ConfigOption<>(GREMLIN_NS, "graph",
+    public static final ConfigOption<String> GREMLIN_GRAPH = new ConfigOption<String>(GREMLIN_NS, "graph",
             "The implementation of graph factory that will be used by gremlin server", ConfigOption.Type.LOCAL, "org.janusgraph.core.JanusGraphFactory");
 
     // ################ Begin Class Definition #######################
@@ -1199,7 +1332,7 @@ public class GraphDatabaseConfiguration {
     private final Configuration configuration;
     private final ReadConfiguration configurationAtOpen;
     private String uniqueGraphId;
-    private final ModifiableConfiguration localConfiguration;
+    private ModifiableConfiguration localConfiguration;
 
     private boolean readOnly;
     private boolean flushIDs;
@@ -1223,31 +1356,31 @@ public class GraphDatabaseConfiguration {
 
         configurationAtOpen = localConfig;
 
-        BasicConfiguration localBasicConfiguration = new BasicConfiguration(ROOT_NS,localConfig, BasicConfiguration.Restriction.NONE);
+        BasicConfiguration localbc = new BasicConfiguration(ROOT_NS,localConfig, BasicConfiguration.Restriction.NONE);
         ModifiableConfiguration overwrite = new ModifiableConfiguration(ROOT_NS,new CommonsConfiguration(), BasicConfiguration.Restriction.NONE);
 
 //        KeyColumnValueStoreManager storeManager=null;
-        final KeyColumnValueStoreManager storeManager = Backend.getStorageManager(localBasicConfiguration);
+        final KeyColumnValueStoreManager storeManager = Backend.getStorageManager(localbc);
         final StoreFeatures storeFeatures = storeManager.getFeatures();
-        KCVSConfiguration keyColumnValueStoreConfiguration=Backend.getStandaloneGlobalConfiguration(storeManager,localBasicConfiguration);
-        final ReadConfiguration globalConfig;
+        KCVSConfiguration kcvsConfig=Backend.getStandaloneGlobalConfiguration(storeManager,localbc);
+        ReadConfiguration globalConfig=null;
 
         //Copy over local config options
         localConfiguration = new ModifiableConfiguration(ROOT_NS, new CommonsConfiguration(), BasicConfiguration.Restriction.LOCAL);
-        localConfiguration.setAll(getLocalSubset(localBasicConfiguration.getAll()));
+        localConfiguration.setAll(getLocalSubset(localbc.getAll()));
 
         //Read out global configuration
         try {
             // If lock prefix is unspecified, specify it now
-            if (!localBasicConfiguration.has(LOCK_LOCAL_MEDIATOR_GROUP)) {
+            if (!localbc.has(LOCK_LOCAL_MEDIATOR_GROUP)) {
                 overwrite.set(LOCK_LOCAL_MEDIATOR_GROUP, storeManager.getName());
             }
 
             //Freeze global configuration if not already frozen!
-            ModifiableConfiguration globalWrite = new ModifiableConfiguration(ROOT_NS,keyColumnValueStoreConfiguration, BasicConfiguration.Restriction.GLOBAL);
+            ModifiableConfiguration globalWrite = new ModifiableConfiguration(ROOT_NS,kcvsConfig, BasicConfiguration.Restriction.GLOBAL);
             if (!globalWrite.isFrozen()) {
                 //Copy over global configurations
-                globalWrite.setAll(getGlobalSubset(localBasicConfiguration.getAll()));
+                globalWrite.setAll(getGlobalSubset(localbc.getAll()));
 
                 //Write JanusGraph version
                 Preconditions.checkArgument(!globalWrite.has(INITIAL_JANUSGRAPH_VERSION),"Database has already been initialized but not frozen");
@@ -1257,19 +1390,17 @@ public class GraphDatabaseConfiguration {
                  * the storage backend both supports timestamps and has a preference for
                  * a specific timestamp provider, then apply the backend's preference.
                  */
-                if (!localBasicConfiguration.has(TIMESTAMP_PROVIDER)) {
+                if (!localbc.has(TIMESTAMP_PROVIDER)) {
                     StoreFeatures f = storeManager.getFeatures();
-                    final TimestampProviders backendPreference;
+                    TimestampProviders backendPreference = null;
                     if (f.hasTimestamps() && null != (backendPreference = f.getPreferredTimestamps())) {
                         globalWrite.set(TIMESTAMP_PROVIDER, backendPreference);
-                        log.info("Set timestamps to {} according to storage backend preference",
-                            LoggerUtil.sanitizeAndLaunder(globalWrite.get(TIMESTAMP_PROVIDER)));
+                        log.info("Set timestamps to {} according to storage backend preference", globalWrite.get(TIMESTAMP_PROVIDER));
                     }
                     globalWrite.set(TIMESTAMP_PROVIDER, TIMESTAMP_PROVIDER.getDefaultValue());
-                    log.info("Set default timestamp provider {}",
-                        LoggerUtil.sanitizeAndLaunder(globalWrite.get(TIMESTAMP_PROVIDER)));
+                    log.info("Set default timestamp provider {}", globalWrite.get(TIMESTAMP_PROVIDER));
                 } else {
-                    log.info("Using configured timestamp provider {}", localBasicConfiguration.get(TIMESTAMP_PROVIDER));
+                    log.info("Using configured timestamp provider {}", localbc.get(TIMESTAMP_PROVIDER));
                 }
 
                 globalWrite.freezeConfiguration();
@@ -1281,13 +1412,13 @@ public class GraphDatabaseConfiguration {
                         throw new JanusGraphException(String.format(INCOMPATIBLE_VERSION_EXCEPTION, version, JanusGraphConstants.VERSION));
                     }
                 } catch (IllegalStateException ise) {
-                    checkBackwardCompatibilityWithTitan(globalWrite, localBasicConfiguration, keyColumnValueStoreConfiguration, overwrite);
+                    checkBackwardCompatibilityWithTitan(globalWrite);
                 }
 
                 final boolean managedOverridesAllowed;
 
-                if (localBasicConfiguration.has(ALLOW_STALE_CONFIG))
-                    managedOverridesAllowed = localBasicConfiguration.get(ALLOW_STALE_CONFIG);
+                if (localbc.has(ALLOW_STALE_CONFIG))
+                    managedOverridesAllowed = localbc.get(ALLOW_STALE_CONFIG);
                 else if (globalWrite.has(ALLOW_STALE_CONFIG))
                     managedOverridesAllowed = globalWrite.get(ALLOW_STALE_CONFIG);
                 else
@@ -1296,7 +1427,7 @@ public class GraphDatabaseConfiguration {
                 // Check for disagreement between local and backend values for GLOBAL(_OFFLINE) and FIXED options
                 // The point of this check is to find edits to the local config which have no effect (and therefore likely indicate misconfiguration)
                 Set<String> optionsWithDiscrepancies = Sets.newHashSet();
-                for (Map.Entry<ConfigElement.PathIdentifier, Object> ent : getManagedSubset(localBasicConfiguration.getAll()).entrySet()) {
+                for (Map.Entry<ConfigElement.PathIdentifier, Object> ent : getManagedSubset(localbc.getAll()).entrySet()) {
                     ConfigElement.PathIdentifier pid = ent.getKey();
                     assert pid.element.isOption();
                     ConfigOption<?> opt = (ConfigOption<?>)pid.element;
@@ -1305,18 +1436,14 @@ public class GraphDatabaseConfiguration {
                     // Get the storage backend's setting and compare with localValue
                     Object storeValue = globalWrite.get(opt, pid.umbrellaElements);
 
-                    // Check if the value is to be overwritten
-                    if (overwrite.has(opt, pid.umbrellaElements))
-                    {
-                    	storeValue = overwrite.get(opt, pid.umbrellaElements);
-                    }
-
-                    // Most validation predicate implementations disallow null, but we can't assume that here
+                    // Most validation predicate impls disallow null, but we can't assume that here
                     final boolean match;
                     if (null != localValue && null != storeValue) {
                         match = localValue.equals(storeValue);
+                    } else if (null == localValue && null == storeValue) {
+                        match = true;
                     } else {
-                        match = null == localValue && null == storeValue;
+                        match = false;
                     }
 
                     // Log each option with value disagreement between local and backend configs
@@ -1339,9 +1466,9 @@ public class GraphDatabaseConfiguration {
                 }
             }
 
-            globalConfig = keyColumnValueStoreConfiguration.asReadConfiguration();
+            globalConfig = kcvsConfig.asReadConfiguration();
         } finally {
-            keyColumnValueStoreConfiguration.close();
+            kcvsConfig.close();
         }
         Configuration combinedConfig = new MixedConfiguration(ROOT_NS,globalConfig,localConfig);
 
@@ -1376,48 +1503,41 @@ public class GraphDatabaseConfiguration {
         preLoadConfiguration();
     }
 
-    private void checkBackwardCompatibilityWithTitan(ModifiableConfiguration globalWrite, BasicConfiguration localBasicConfiguration, KCVSConfiguration keyColumnValueStoreConfiguration, ModifiableConfiguration overwrite) {
+    private void checkBackwardCompatibilityWithTitan(ModifiableConfiguration globalWrite) {
         String version = globalWrite.get(TITAN_COMPATIBLE_VERSIONS);
         Preconditions.checkArgument(version!=null,"JanusGraph version nor Titan compatibility have not been initialized");
         if (!JanusGraphConstants.TITAN_COMPATIBLE_VERSIONS.contains(version)) {
             throw new JanusGraphException(String.format(INCOMPATIBLE_VERSION_EXCEPTION, version, JanusGraphConstants.VERSION));
         }
-
-        // When connecting to a store created by Titan the ID store name will not be in the
-        // global configuration. To ensure compatibility override the default to titan_ids.
-        boolean localTitanConfigured = localBasicConfiguration.get(TITAN_COMPATIBLE_VERSIONS) != null;
-        boolean localIdStoreIsDefault = JanusGraphConstants.JANUSGRAPH_ID_STORE_NAME.equals(localBasicConfiguration.get(IDS_STORE_NAME));
-
-        if (localTitanConfigured) {
-            boolean usingTitanIdStore = localIdStoreIsDefault || JanusGraphConstants.TITAN_ID_STORE_NAME.equals(localBasicConfiguration.get(IDS_STORE_NAME));
-            boolean existingKeyStore = keyColumnValueStoreConfiguration.get(IDS_STORE_NAME.getName(), IDS_STORE_NAME.getDatatype()) != null;
-
-        	Preconditions.checkArgument(usingTitanIdStore,"ID store for Titan compatibility has not been initialized to: " + JanusGraphConstants.TITAN_ID_STORE_NAME);
-            if (!existingKeyStore) {
-                log.info("Setting {} to {} for Titan compatibility", IDS_STORE_NAME.getName(), JanusGraphConstants.TITAN_ID_STORE_NAME);
-                overwrite.set(IDS_STORE_NAME, JanusGraphConstants.TITAN_ID_STORE_NAME);
-            }
-        }
     }
 
     private static Map<ConfigElement.PathIdentifier, Object> getGlobalSubset(Map<ConfigElement.PathIdentifier, Object> m) {
-        return Maps.filterEntries(m, entry -> {
-            assert entry.getKey().element.isOption();
-            return ((ConfigOption)entry.getKey().element).isGlobal();
+        return Maps.filterEntries(m, new Predicate<Map.Entry<ConfigElement.PathIdentifier, Object>>() {
+            @Override
+            public boolean apply(@Nullable Map.Entry<ConfigElement.PathIdentifier, Object> entry) {
+                assert entry.getKey().element.isOption();
+                return ((ConfigOption)entry.getKey().element).isGlobal();
+            }
         });
     }
 
     private static Map<ConfigElement.PathIdentifier, Object> getLocalSubset(Map<ConfigElement.PathIdentifier, Object> m) {
-        return Maps.filterEntries(m, entry -> {
-            assert entry.getKey().element.isOption();
-            return ((ConfigOption)entry.getKey().element).isLocal();
+        return Maps.filterEntries(m, new Predicate<Map.Entry<ConfigElement.PathIdentifier, Object>>() {
+            @Override
+            public boolean apply(@Nullable Map.Entry<ConfigElement.PathIdentifier, Object> entry) {
+                assert entry.getKey().element.isOption();
+                return ((ConfigOption)entry.getKey().element).isLocal();
+            }
         });
     }
 
     private static Map<ConfigElement.PathIdentifier, Object> getManagedSubset(Map<ConfigElement.PathIdentifier, Object> m) {
-        return Maps.filterEntries(m, entry -> {
-            assert entry.getKey().element.isOption();
-            return ((ConfigOption)entry.getKey().element).isManaged();
+        return Maps.filterEntries(m, new Predicate<Map.Entry<ConfigElement.PathIdentifier, Object>>() {
+            @Override
+            public boolean apply(@Nullable Map.Entry<ConfigElement.PathIdentifier, Object> entry) {
+                assert entry.getKey().element.isOption();
+                return ((ConfigOption)entry.getKey().element).isManaged();
+            }
         });
     }
 
@@ -1433,13 +1553,13 @@ public class GraphDatabaseConfiguration {
             suffix = ManagementFactory.getRuntimeMXBean().getName() + LongEncoding.encode(INSTANCE_COUNTER.incrementAndGet());
         }
 
-        byte[] addressBytes;
+        byte[] addrBytes;
         try {
-            addressBytes = Inet4Address.getLocalHost().getAddress();
+            addrBytes = Inet4Address.getLocalHost().getAddress();
         } catch (UnknownHostException e) {
             throw new JanusGraphConfigurationException("Cannot determine local host", e);
         }
-        String uid = new String(Hex.encodeHex(addressBytes)) + suffix;
+        String uid = new String(Hex.encodeHex(addrBytes)) + suffix;
         for (char c : ConfigElement.ILLEGAL_CHARS) {
             uid = StringUtils.replaceChars(uid,c,'-');
         }
@@ -1458,20 +1578,20 @@ public class GraphDatabaseConfiguration {
         return uid;
     }
 
-    public static ModifiableConfiguration buildGraphConfiguration() {
+    public static final ModifiableConfiguration buildGraphConfiguration() {
         return new ModifiableConfiguration(ROOT_NS,
                 new CommonsConfiguration(new BaseConfiguration()),
                 BasicConfiguration.Restriction.NONE);
     }
 
-    public static ModifiableConfiguration buildJobConfiguration() {
+    public static final ModifiableConfiguration buildJobConfiguration() {
         return new ModifiableConfiguration(JOB_NS,
                 new CommonsConfiguration(new BaseConfiguration()),
                 BasicConfiguration.Restriction.NONE);
     }
 
 
-    public static String getSystemMetricsPrefix() {
+    public static final String getSystemMetricsPrefix() {
         return METRICS_SYSTEM_PREFIX_DEFAULT;
     }
 
@@ -1508,7 +1628,7 @@ public class GraphDatabaseConfiguration {
         allowVertexIdSetting = configuration.get(ALLOW_SETTING_VERTEX_ID);
         logTransactions = configuration.get(SYSTEM_LOG_TRANSACTIONS);
 
-        unknownIndexKeyName = configuration.get(IGNORE_UNKNOWN_INDEX_FIELD) ? UNKNOWN_FIELD_NAME : null;
+        unknownIndexKeyName = configuration.get(IGNORE_UNKNOWN_INDEX_FIELD) ? UKNOWN_FIELD_NAME : null;
 
         configureMetrics();
     }
@@ -1561,15 +1681,15 @@ public class GraphDatabaseConfiguration {
     private void configureMetricsGangliaReporter() {
         if (configuration.has(GANGLIA_HOST_OR_GROUP)) {
             final String host = configuration.get(GANGLIA_HOST_OR_GROUP);
-            final Duration intervalDuration = configuration.get(GANGLIA_INTERVAL);
+            final Duration ival = configuration.get(GANGLIA_INTERVAL);
             final Integer port = configuration.get(GANGLIA_PORT);
 
-            final UDPAddressingMode addressingMode;
-            final String addressingModeString = configuration.get(GANGLIA_ADDRESSING_MODE);
-            if (addressingModeString.equalsIgnoreCase("multicast")) {
-                addressingMode = UDPAddressingMode.MULTICAST;
-            } else if (addressingModeString.equalsIgnoreCase("unicast")) {
-                addressingMode = UDPAddressingMode.UNICAST;
+            final UDPAddressingMode addrMode;
+            final String addrModeStr = configuration.get(GANGLIA_ADDRESSING_MODE);
+            if (addrModeStr.equalsIgnoreCase("multicast")) {
+                addrMode = UDPAddressingMode.MULTICAST;
+            } else if (addrModeStr.equalsIgnoreCase("unicast")) {
+                addrMode = UDPAddressingMode.UNICAST;
             } else throw new AssertionError();
 
             final Boolean proto31 = configuration.get(GANGLIA_USE_PROTOCOL_31);
@@ -1582,7 +1702,7 @@ public class GraphDatabaseConfiguration {
             if (configuration.has(GANGLIA_SPOOF)) spoof = configuration.get(GANGLIA_SPOOF);
 
             try {
-                MetricManager.INSTANCE.addGangliaReporter(host, port, addressingMode, ttl, proto31, uuid, spoof, intervalDuration);
+                MetricManager.INSTANCE.addGangliaReporter(host, port, addrMode, ttl, proto31, uuid, spoof, ival);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -1675,7 +1795,7 @@ public class GraphDatabaseConfiguration {
     }
 
     public static List<RegisteredAttributeClass<?>> getRegisteredAttributeClasses(Configuration configuration) {
-        List<RegisteredAttributeClass<?>> all = new ArrayList<>();
+        List<RegisteredAttributeClass<?>> all = new ArrayList<RegisteredAttributeClass<?>>();
         for (String attributeId : configuration.getContainedNamespaces(CUSTOM_ATTRIBUTE_NS)) {
             Preconditions.checkArgument(attributeId.startsWith(ATTRIBUTE_PREFIX),"Invalid attribute definition: %s",attributeId);
             int position;
@@ -1684,8 +1804,8 @@ public class GraphDatabaseConfiguration {
             } catch (NumberFormatException e) {
                 throw new IllegalArgumentException("Expected entry of the form ["+ ATTRIBUTE_PREFIX +"X] where X is a number but given" + attributeId);
             }
-            final Class<?> clazz;
-            final AttributeSerializer<?> serializer;
+            Class<?> clazz = null;
+            AttributeSerializer<?> serializer = null;
             String classname = configuration.get(CUSTOM_ATTRIBUTE_CLASS,attributeId);
             try {
                 clazz = Class.forName(classname);
@@ -1695,21 +1815,22 @@ public class GraphDatabaseConfiguration {
             Preconditions.checkNotNull(clazz);
 
             Preconditions.checkArgument(configuration.has(CUSTOM_SERIALIZER_CLASS, attributeId));
-            String serializerName = configuration.get(CUSTOM_SERIALIZER_CLASS, attributeId);
+            String serializername = configuration.get(CUSTOM_SERIALIZER_CLASS, attributeId);
             try {
-                Class<?> serializerClass = Class.forName(serializerName);
-                serializer = (AttributeSerializer) serializerClass.newInstance();
+                Class sclass = Class.forName(serializername);
+                serializer = (AttributeSerializer) sclass.newInstance();
             } catch (ClassNotFoundException e) {
-                throw new IllegalArgumentException("Could not find serializer class" + serializerName);
-            } catch (InstantiationException | IllegalAccessException e) {
-                throw new IllegalArgumentException("Could not instantiate serializer class" + serializerName, e);
+                throw new IllegalArgumentException("Could not find serializer class" + serializername);
+            } catch (InstantiationException e) {
+                throw new IllegalArgumentException("Could not instantiate serializer class" + serializername, e);
+            } catch (IllegalAccessException e) {
+                throw new IllegalArgumentException("Could not instantiate serializer class" + serializername, e);
             }
             Preconditions.checkNotNull(serializer);
-            RegisteredAttributeClass reg = new RegisteredAttributeClass(position, clazz, serializer);
-            for (RegisteredAttributeClass<?> registeredAttributeClass : all) {
-                if (registeredAttributeClass.equals(reg)) {
-                    throw new IllegalArgumentException("Duplicate attribute registration: " + registeredAttributeClass
-                            + " and " + reg);
+            RegisteredAttributeClass reg = new RegisteredAttributeClass(position,clazz, serializer);
+            for (int i = 0; i < all.size(); i++) {
+                if (all.get(i).equals(reg)) {
+                    throw new IllegalArgumentException("Duplicate attribute registration: " + all.get(i) + " and " + reg);
                 }
             }
             all.add(reg);
@@ -1723,11 +1844,11 @@ public class GraphDatabaseConfiguration {
     }
 
     public String getBackendDescription() {
-        String className = configuration.get(STORAGE_BACKEND);
-        if (className.equalsIgnoreCase("berkeleyje")) {
-            return className + ":" + configuration.get(STORAGE_DIRECTORY);
+        String clazzname = configuration.get(STORAGE_BACKEND);
+        if (clazzname.equalsIgnoreCase("berkeleyje")) {
+            return clazzname + ":" + configuration.get(STORAGE_DIRECTORY);
         } else {
-            return className + ":" + Arrays.toString(configuration.get(STORAGE_HOSTS));
+            return clazzname + ":" + Arrays.toString(configuration.get(STORAGE_HOSTS));
         }
     }
 
@@ -1740,10 +1861,6 @@ public class GraphDatabaseConfiguration {
         backend.initialize(configuration);
         storeFeatures = backend.getStoreFeatures();
         return backend;
-    }
-
-    public String getGraphName() {
-        return getConfigurationAtOpen().getString(GRAPH_NAME.toString());
     }
 
     public StoreFeatures getStoreFeatures() {
@@ -1788,8 +1905,52 @@ public class GraphDatabaseConfiguration {
      Methods for writing/reading config files
 	-------------------------------------------*/
 
+    /**
+     * Returns the home directory for the graph database initialized in this configuration
+     *
+     * @return Home directory for this graph database configuration
+     */
+    public File getHomeDirectory() {
+        if (!configuration.has(STORAGE_DIRECTORY))
+            throw new UnsupportedOperationException("No home directory specified");
+        File dir = new File(configuration.get(STORAGE_DIRECTORY));
+        Preconditions.checkArgument(dir.isDirectory(), "Not a directory");
+        return dir;
+    }
+
+    //TODO: which of the following methods are really needed
+
+    /**
+     * Returns the home directory path for the graph database initialized in this configuration
+     *
+     * @return Home directory path for this graph database configuration
+     */
+    public String getHomePath() {
+        return getPath(getHomeDirectory());
+    }
+
     public static String getPath(File dir) {
         return dir.getAbsolutePath() + File.separator;
     }
+
+
+    static boolean existsFile(String file) {
+        return (new File(file)).isFile();
+    }
+
+
+//    static PropertiesConfiguration getPropertiesConfig(String file) {
+//        PropertiesConfiguration config = new PropertiesConfiguration();
+//        if (existsFile(file)) {
+//            try {
+//                config.load(file);
+//            } catch (ConfigurationException e) {
+//                throw new IllegalArgumentException("Cannot load existing configuration file", e);
+//            }
+//        }
+//        config.setFileName(file);
+//        config.setAutoSave(true);
+//        return config;
+//    }
 
 }

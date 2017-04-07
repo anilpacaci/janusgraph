@@ -113,6 +113,18 @@
            <groupId>com.google.code.findbugs</groupId>
            <artifactId>jsr305</artifactId>
        </dependency>
+       <!-- Memcached client library for partitioning -->
+		<dependency>
+			<groupId>com.whalin</groupId>
+			<artifactId>Memcached-Java-Client</artifactId>
+			<version>3.0.2</version>
+			<exclusions>
+				<exclusion>  <!-- declare the exclusion here -->
+					<groupId>commons-pool</groupId>
+					<artifactId>commons-pool</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
        <!-- The Noggit JSON parsing library is needed for GeoJSON parsing -->
        <dependency>
            <groupId>org.noggit</groupId>
