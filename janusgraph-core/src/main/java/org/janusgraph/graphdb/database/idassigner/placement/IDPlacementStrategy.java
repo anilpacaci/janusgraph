@@ -14,6 +14,7 @@
 
 package org.janusgraph.graphdb.database.idassigner.placement;
 
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.InternalElement;
 import org.janusgraph.graphdb.internal.InternalVertex;
@@ -39,6 +40,45 @@ public interface IDPlacementStrategy {
      * @return
      */
     public int getPartition(InternalElement element);
+    
+    /**
+	 * Individually assigns an id to the given vertex or relation.
+	 * to be used by greedy partitioners
+	 *
+	 * @param element
+	 *            Vertex or relation to assign id to.
+	 * @param vertex
+	 *            Provides necessary context for greedy partitining heuristics
+	 *            (properties and adjacency information)
+	 * @return
+	 */
+	public int getPartition(InternalElement element, StarVertex vertex);
+
+	/**
+	 * helper method to hint partitioning algorithm about the final placement of
+	 * element
+	 * to be used by greedy partitioners
+	 * 
+	 * @param element
+	 *            that was assigned
+	 * @param partitionID
+	 *            final assignment for element
+	 */
+	public void assignedPartition(InternalElement element, int partitionID);
+
+	/**
+	 * helper method to hint partitioning algorithm about the final placement of
+	 * element
+	 * to be used by greedy partitioners
+	 *  
+	 * @param element
+	 *            that was assigned
+	 * @param vertex
+	 *            Context information for greedy partitioners
+	 * @param partitionID
+	 *            final assignment for element
+	 */
+	public void assignedPartition(InternalElement element, StarVertex vertex, int partitionID);
 
     /**
      * Bulk assignment of idAuthorities to vertices.

@@ -14,7 +14,23 @@
 
 package org.janusgraph.graphdb.tinkerpop;
 
-import com.google.common.base.Preconditions;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.function.Function;
+
+import org.apache.commons.configuration.Configuration;
+import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.T;
+import org.apache.tinkerpop.gremlin.structure.Transaction;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.io.Io;
+import org.apache.tinkerpop.gremlin.structure.util.AbstractThreadedTransaction;
+import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
+import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
 import org.janusgraph.core.JanusGraphTransaction;
 import org.janusgraph.core.JanusGraphVertex;
 import org.janusgraph.core.VertexLabel;
@@ -22,204 +38,213 @@ import org.janusgraph.diskstorage.util.Hex;
 import org.janusgraph.graphdb.olap.computer.FulgoraGraphComputer;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
 import org.janusgraph.graphdb.types.system.BaseVertexLabel;
-import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.structure.*;
-import org.apache.tinkerpop.gremlin.structure.io.Io;
-import org.apache.tinkerpop.gremlin.structure.util.AbstractThreadedTransaction;
-import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
-import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
-import org.apache.commons.configuration.Configuration;
-import org.apache.tinkerpop.gremlin.structure.T;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.function.Function;
+import com.google.common.base.Preconditions;
 
 /**
- * Blueprints specific implementation of {@link JanusGraphTransaction}.
- * Provides utility methods that wrap JanusGraph calls with Blueprints terminology.
+ * Blueprints specific implementation of {@link JanusGraphTransaction}. Provides
+ * utility methods that wrap JanusGraph calls with Blueprints terminology.
  *
  * @author Matthias Broecheler (me@matthiasb.com)
  */
 public abstract class JanusGraphBlueprintsTransaction implements JanusGraphTransaction {
 
-    /**
-     * Returns the graph that this transaction is based on
-     * @return
-     */
-    protected abstract JanusGraphBlueprintsGraph getGraph();
+	/**
+	 * Returns the graph that this transaction is based on
+	 * 
+	 * @return
+	 */
+	protected abstract JanusGraphBlueprintsGraph getGraph();
 
-    @Override
-    public Features features() {
-        return getGraph().features();
-    }
+	@Override
+	public Features features() {
+		return getGraph().features();
+	}
 
-    @Override
-    public Variables variables() {
-        return getGraph().variables();
-    }
+	@Override
+	public Variables variables() {
+		return getGraph().variables();
+	}
 
-    @Override
-    public Configuration configuration() {
-        return getGraph().configuration();
-    }
+	@Override
+	public Configuration configuration() {
+		return getGraph().configuration();
+	}
 
-    @Override
-    public <I extends Io> I io(final Io.Builder<I> builder) {
-        return getGraph().io(builder);
-    }
+	@Override
+	public <I extends Io> I io(final Io.Builder<I> builder) {
+		return getGraph().io(builder);
+	}
 
-    @Override
-    public <C extends GraphComputer> C compute(Class<C> graphComputerClass) throws IllegalArgumentException {
-        JanusGraphBlueprintsGraph graph = getGraph();
-        if (isOpen()) commit();
-        return graph.compute(graphComputerClass);
-    }
+	@Override
+	public <C extends GraphComputer> C compute(Class<C> graphComputerClass) throws IllegalArgumentException {
+		JanusGraphBlueprintsGraph graph = getGraph();
+		if (isOpen())
+			commit();
+		return graph.compute(graphComputerClass);
+	}
 
-    @Override
-    public FulgoraGraphComputer compute() throws IllegalArgumentException {
-        JanusGraphBlueprintsGraph graph = getGraph();
-        if (isOpen()) commit();
-        return graph.compute();
-    }
+	@Override
+	public FulgoraGraphComputer compute() throws IllegalArgumentException {
+		JanusGraphBlueprintsGraph graph = getGraph();
+		if (isOpen())
+			commit();
+		return graph.compute();
+	}
 
-    /**
-     * Creates a new vertex in the graph with the given vertex id.
-     * Note, that an exception is thrown if the vertex id is not a valid JanusGraph vertex id or if a vertex with the given
-     * id already exists. Only accepts long ids - all others are ignored.
-     * <p/>
-     * Custom id setting must be enabled via the configuration option {@link org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration#ALLOW_SETTING_VERTEX_ID}.
-     * <p/>
-     * Use {@link org.janusgraph.core.util.JanusGraphId#toVertexId(long)} to construct a valid JanusGraph vertex id from a user id.
-     *
-     * @param keyValues key-value pairs of properties to characterize or attach to the vertex
-     * @return New vertex
-     */
-    @Override
-    public JanusGraphVertex addVertex(Object... keyValues) {
-        ElementHelper.legalPropertyKeyValueArray(keyValues);
-        if (ElementHelper.getIdValue(keyValues).isPresent()) throw Vertex.Exceptions.userSuppliedIdsNotSupported();
-        Object labelValue = null;
-        for (int i = 0; i < keyValues.length; i = i + 2) {
-            if (keyValues[i].equals(T.label)) {
-                labelValue = keyValues[i+1];
-                Preconditions.checkArgument(labelValue instanceof VertexLabel || labelValue instanceof String,
-                        "Expected a string or VertexLabel as the vertex label argument, but got: %s",labelValue);
-                if (labelValue instanceof String) ElementHelper.validateLabel((String) labelValue);
-            }
-        }
-        VertexLabel label = BaseVertexLabel.DEFAULT_VERTEXLABEL;
-        if (labelValue!=null) {
-            label = (labelValue instanceof VertexLabel)?(VertexLabel)labelValue:getOrCreateVertexLabel((String) labelValue);
-        }
+	/**
+	 * Creates a new vertex in the graph with the given vertex id. Note, that an
+	 * exception is thrown if the vertex id is not a valid JanusGraph vertex id
+	 * or if a vertex with the given id already exists. Only accepts long ids -
+	 * all others are ignored.
+	 * <p/>
+	 * Custom id setting must be enabled via the configuration option
+	 * {@link org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration#ALLOW_SETTING_VERTEX_ID}
+	 * .
+	 * <p/>
+	 * Use {@link org.janusgraph.core.util.JanusGraphId#toVertexId(long)} to
+	 * construct a valid JanusGraph vertex id from a user id.
+	 *
+	 * @param keyValues
+	 *            key-value pairs of properties to characterize or attach to the
+	 *            vertex
+	 * @return New vertex
+	 */
+	@Override
+	public JanusGraphVertex addVertex(Object... keyValues) {
+		return addStarVertex(null, keyValues);
+	}
 
-        final JanusGraphVertex vertex = addVertex(null,label);
-//        for (int i = 0; i < keyValues.length; i = i + 2) {
-//            if (!keyValues[i].equals(T.id) && !keyValues[i].equals(T.label))
-//                ((StandardJanusGraphTx)this).addPropertyInternal(vertex,getOrCreatePropertyKey((String) keyValues[i]),keyValues[i+1]);
-//        }
-        org.janusgraph.graphdb.util.ElementHelper.attachProperties(vertex, keyValues);
-        return vertex;
-    }
+	public JanusGraphVertex addStarVertex(StarVertex starVertex, Object... keyValues) {
+		ElementHelper.legalPropertyKeyValueArray(keyValues);
+		if (ElementHelper.getIdValue(keyValues).isPresent())
+			throw Vertex.Exceptions.userSuppliedIdsNotSupported();
+		Object labelValue = null;
+		for (int i = 0; i < keyValues.length; i = i + 2) {
+			if (keyValues[i].equals(T.label)) {
+				labelValue = keyValues[i + 1];
+				Preconditions.checkArgument(labelValue instanceof VertexLabel || labelValue instanceof String,
+						"Expected a string or VertexLabel as the vertex label argument, but got: %s", labelValue);
+				if (labelValue instanceof String)
+					ElementHelper.validateLabel((String) labelValue);
+			}
+		}
+		VertexLabel label = BaseVertexLabel.DEFAULT_VERTEXLABEL;
+		if (labelValue != null) {
+			label = (labelValue instanceof VertexLabel) ? (VertexLabel) labelValue
+					: getOrCreateVertexLabel((String) labelValue);
+		}
 
-    @Override
-    public Iterator<Vertex> vertices(Object... vids) {
-        if (vids==null || vids.length==0) return (Iterator)getVertices().iterator();
-        ElementUtils.verifyArgsMustBeEitherIdorElement(vids);
-        long[] ids = new long[vids.length];
-        int pos = 0;
-        for (int i = 0; i < vids.length; i++) {
-            long id = ElementUtils.getVertexId(vids[i]);
-            if (id>0) ids[pos++]=id;
-        }
-        if (pos==0) return Collections.emptyIterator();
-        if (pos<ids.length) ids = Arrays.copyOf(ids,pos);
-        return (Iterator)getVertices(ids).iterator();
-    }
+		final JanusGraphVertex vertex = addStarVertex(null, label, starVertex);
+		// for (int i = 0; i < keyValues.length; i = i + 2) {
+		// if (!keyValues[i].equals(T.id) && !keyValues[i].equals(T.label))
+		// ((StandardJanusGraphTx)this).addPropertyInternal(vertex,getOrCreatePropertyKey((String)
+		// keyValues[i]),keyValues[i+1]);
+		// }
+		org.janusgraph.graphdb.util.ElementHelper.attachProperties(vertex, keyValues);
+		return vertex;
+	}
 
-    @Override
-    public Iterator<Edge> edges(Object... eids) {
-        if (eids==null || eids.length==0) return (Iterator)getEdges().iterator();
-        ElementUtils.verifyArgsMustBeEitherIdorElement(eids);
-        RelationIdentifier[] ids = new RelationIdentifier[eids.length];
-        int pos = 0;
-        for (int i = 0; i < eids.length; i++) {
-            RelationIdentifier id = ElementUtils.getEdgeId(eids[i]);
-            if (id!=null) ids[pos++]=id;
-        }
-        if (pos==0) return Collections.emptyIterator();
-        if (pos<ids.length) ids = Arrays.copyOf(ids,pos);
-        return (Iterator)getEdges(ids).iterator();
-    }
+	@Override
+	public Iterator<Vertex> vertices(Object... vids) {
+		if (vids == null || vids.length == 0)
+			return (Iterator) getVertices().iterator();
+		ElementUtils.verifyArgsMustBeEitherIdorElement(vids);
+		long[] ids = new long[vids.length];
+		int pos = 0;
+		for (int i = 0; i < vids.length; i++) {
+			long id = ElementUtils.getVertexId(vids[i]);
+			if (id > 0)
+				ids[pos++] = id;
+		}
+		if (pos == 0)
+			return Collections.emptyIterator();
+		if (pos < ids.length)
+			ids = Arrays.copyOf(ids, pos);
+		return (Iterator) getVertices(ids).iterator();
+	}
 
+	@Override
+	public Iterator<Edge> edges(Object... eids) {
+		if (eids == null || eids.length == 0)
+			return (Iterator) getEdges().iterator();
+		ElementUtils.verifyArgsMustBeEitherIdorElement(eids);
+		RelationIdentifier[] ids = new RelationIdentifier[eids.length];
+		int pos = 0;
+		for (int i = 0; i < eids.length; i++) {
+			RelationIdentifier id = ElementUtils.getEdgeId(eids[i]);
+			if (id != null)
+				ids[pos++] = id;
+		}
+		if (pos == 0)
+			return Collections.emptyIterator();
+		if (pos < ids.length)
+			ids = Arrays.copyOf(ids, pos);
+		return (Iterator) getEdges(ids).iterator();
+	}
 
+	// @Override
+	// public GraphComputer compute(final Class... graphComputerClass) {
+	// throw new UnsupportedOperationException("Graph Computer not supported on
+	// an individual transaction. Call on graph instead.");
+	// }
 
+	@Override
+	public String toString() {
+		int ihc = System.identityHashCode(this);
+		String ihcString = String.format("0x%s", Hex.bytesToHex((byte) (ihc >>> 24 & 0x000000FF),
+				(byte) (ihc >>> 16 & 0x000000FF), (byte) (ihc >>> 8 & 0x000000FF), (byte) (ihc & 0x000000FF)));
+		return StringFactory.graphString(this, ihcString);
+	}
 
-//    @Override
-//    public GraphComputer compute(final Class... graphComputerClass) {
-//        throw new UnsupportedOperationException("Graph Computer not supported on an individual transaction. Call on graph instead.");
-//    }
+	@Override
+	public Transaction tx() {
+		return new AbstractThreadedTransaction(getGraph()) {
+			@Override
+			public void doOpen() {
+				if (isClosed())
+					throw new IllegalStateException("Cannot re-open a closed transaction.");
+			}
 
-    @Override
-    public String toString() {
-        int ihc = System.identityHashCode(this);
-        String ihcString = String.format("0x%s", Hex.bytesToHex(
-                (byte)(ihc >>> 24 & 0x000000FF),
-                (byte)(ihc >>> 16 & 0x000000FF),
-                (byte)(ihc >>> 8  & 0x000000FF),
-                (byte)(ihc        & 0x000000FF)));
-        return StringFactory.graphString(this, ihcString);
-    }
+			@Override
+			public void doCommit() {
+				JanusGraphBlueprintsTransaction.this.commit();
+			}
 
-    @Override
-    public Transaction tx() {
-        return new AbstractThreadedTransaction(getGraph()) {
-            @Override
-            public void doOpen() {
-                if (isClosed()) throw new IllegalStateException("Cannot re-open a closed transaction.");
-            }
+			@Override
+			public void doRollback() {
+				JanusGraphBlueprintsTransaction.this.rollback();
+			}
 
-            @Override
-            public void doCommit() {
-                JanusGraphBlueprintsTransaction.this.commit();
-            }
+			@Override
+			public <R> Workload<R> submit(Function<Graph, R> graphRFunction) {
+				throw new UnsupportedOperationException("JanusGraph does not support nested transactions. "
+						+ "Call submit on a JanusGraph not an individual transaction.");
+			}
 
-            @Override
-            public void doRollback() {
-                JanusGraphBlueprintsTransaction.this.rollback();
-            }
+			@Override
+			public <G extends Graph> G createThreadedTx() {
+				throw new UnsupportedOperationException("JanusGraph does not support nested transactions.");
+			}
 
-            @Override
-            public <R> Workload<R> submit(Function<Graph, R> graphRFunction) {
-                throw new UnsupportedOperationException("JanusGraph does not support nested transactions. " +
-                        "Call submit on a JanusGraph not an individual transaction.");
-            }
+			@Override
+			public boolean isOpen() {
+				return JanusGraphBlueprintsTransaction.this.isOpen();
+			}
 
-            @Override
-            public <G extends Graph> G createThreadedTx() {
-                throw new UnsupportedOperationException("JanusGraph does not support nested transactions.");
-            }
+			@Override
+			public void doClose() {
+				getGraph().tinkerpopTxContainer.close(this);
 
-            @Override
-            public boolean isOpen() {
-                return JanusGraphBlueprintsTransaction.this.isOpen();
-            }
+				// calling super will clear listeners
+				super.doClose();
+			}
+		};
+	}
 
-            @Override
-            public void doClose() {
-                getGraph().tinkerpopTxContainer.close(this);
-
-                // calling super will clear listeners
-                super.doClose();
-            }
-        };
-    }
-
-    @Override
-    public void close() {
-        tx().close();
-    }
-
+	@Override
+	public void close() {
+		tx().close();
+	}
 
 }

@@ -14,20 +14,26 @@
 
 package org.janusgraph.core;
 
-import org.janusgraph.core.schema.SchemaManager;
-import org.apache.tinkerpop.gremlin.structure.Graph;
-
 import java.util.Collection;
 
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
+import org.janusgraph.core.schema.SchemaManager;
+
 /**
- * Transaction defines a transactional context for a {@link org.janusgraph.core.JanusGraph}. Since JanusGraph is a transactional graph
- * database, all interactions with the graph are mitigated by a Transaction.
+ * Transaction defines a transactional context for a
+ * {@link org.janusgraph.core.JanusGraph}. Since JanusGraph is a transactional
+ * graph database, all interactions with the graph are mitigated by a
+ * Transaction.
  * <p/>
- * All vertex and edge retrievals are channeled by a graph transaction which bundles all such retrievals, creations and
- * deletions into one transaction. A graph transaction is analogous to a
- * <a href="http://en.wikipedia.org/wiki/Database_transaction">database transaction</a>.
- * The isolation level and <a href="http://en.wikipedia.org/wiki/ACID">ACID support</a> are configured through the storage
- * backend, meaning whatever level of isolation is supported by the storage backend is mirrored by a graph transaction.
+ * All vertex and edge retrievals are channeled by a graph transaction which
+ * bundles all such retrievals, creations and deletions into one transaction. A
+ * graph transaction is analogous to a
+ * <a href="http://en.wikipedia.org/wiki/Database_transaction">database
+ * transaction</a>. The isolation level and
+ * <a href="http://en.wikipedia.org/wiki/ACID">ACID support</a> are configured
+ * through the storage backend, meaning whatever level of isolation is supported
+ * by the storage backend is mirrored by a graph transaction.
  * <p/>
  * A graph transaction supports:
  * <ul>
@@ -42,56 +48,67 @@ import java.util.Collection;
  */
 public interface Transaction extends Graph, SchemaManager {
 
-   /* ---------------------------------------------------------------
-    * Modifications
-    * ---------------------------------------------------------------
-    */
+	/*
+	 * ---------------------------------------------------------------
+	 * Modifications
+	 * ---------------------------------------------------------------
+	 */
 
-    /**
-     * Creates a new vertex in the graph with the vertex label named by the argument.
-     *
-     * @param vertexLabel the name of the vertex label to use
-     * @return a new vertex in the graph created in the context of this transaction
-     */
-    public JanusGraphVertex addVertex(String vertexLabel);
+	/**
+	 * Creates a new vertex in the graph with the vertex label named by the
+	 * argument.
+	 *
+	 * @param vertexLabel
+	 *            the name of the vertex label to use
+	 * @return a new vertex in the graph created in the context of this
+	 *         transaction
+	 */
+	public JanusGraphVertex addVertex(String vertexLabel);
 
-    @Override
-    public JanusGraphVertex addVertex(Object... objects);
+	@Override
+	public JanusGraphVertex addVertex(Object... objects);
 
-    /**
-     * @return
-     * @see JanusGraph#query()
-     */
-    public JanusGraphQuery<? extends JanusGraphQuery> query();
+	public JanusGraphVertex addStarVertex(StarVertex starVertex, Object... objects);
 
-    /**
-     * Returns a {@link org.janusgraph.core.JanusGraphIndexQuery} to query for vertices or edges against the specified indexing backend using
-     * the given query string. The query string is analyzed and answered by the underlying storage backend.
-     * <p/>
-     * Note, that using indexQuery will may ignore modifications in the current transaction.
-     *
-     * @param indexName Name of the indexing backend to query as configured
-     * @param query Query string
-     * @return JanusGraphIndexQuery object to query the index directly
-     */
-    public JanusGraphIndexQuery indexQuery(String indexName, String query);
+	/**
+	 * @return
+	 * @see JanusGraph#query()
+	 */
+	public JanusGraphQuery<? extends JanusGraphQuery> query();
 
-    /**
-     * @return
-     * @see JanusGraph#multiQuery(org.janusgraph.core.JanusGraphVertex...)
-     */
-    @Deprecated
-    public JanusGraphMultiVertexQuery<? extends JanusGraphMultiVertexQuery> multiQuery(JanusGraphVertex... vertices);
+	/**
+	 * Returns a {@link org.janusgraph.core.JanusGraphIndexQuery} to query for
+	 * vertices or edges against the specified indexing backend using the given
+	 * query string. The query string is analyzed and answered by the underlying
+	 * storage backend.
+	 * <p/>
+	 * Note, that using indexQuery will may ignore modifications in the current
+	 * transaction.
+	 *
+	 * @param indexName
+	 *            Name of the indexing backend to query as configured
+	 * @param query
+	 *            Query string
+	 * @return JanusGraphIndexQuery object to query the index directly
+	 */
+	public JanusGraphIndexQuery indexQuery(String indexName, String query);
 
-    /**
-     * @return
-     * @see JanusGraph#multiQuery(java.util.Collection)
-     */
-    @Deprecated
-    public JanusGraphMultiVertexQuery<? extends JanusGraphMultiVertexQuery> multiQuery(Collection<JanusGraphVertex> vertices);
+	/**
+	 * @return
+	 * @see JanusGraph#multiQuery(org.janusgraph.core.JanusGraphVertex...)
+	 */
+	@Deprecated
+	public JanusGraphMultiVertexQuery<? extends JanusGraphMultiVertexQuery> multiQuery(JanusGraphVertex... vertices);
 
-    @Override
-    public void close();
+	/**
+	 * @return
+	 * @see JanusGraph#multiQuery(java.util.Collection)
+	 */
+	@Deprecated
+	public JanusGraphMultiVertexQuery<? extends JanusGraphMultiVertexQuery> multiQuery(
+			Collection<JanusGraphVertex> vertices);
 
+	@Override
+	public void close();
 
 }

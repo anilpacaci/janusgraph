@@ -14,42 +14,6 @@
 
 package org.janusgraph.graphdb.configuration;
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import org.janusgraph.core.*;
-import org.janusgraph.core.attribute.AttributeSerializer;
-import org.janusgraph.core.schema.DefaultSchemaMaker;
-import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.StandardIndexProvider;
-import org.janusgraph.diskstorage.StandardStoreManager;
-import org.janusgraph.diskstorage.keycolumnvalue.ttl.TTLKCVSManager;
-import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
-import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
-import org.janusgraph.graphdb.database.management.ManagementSystem;
-import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
-import org.janusgraph.util.stats.NumberUtil;
-import org.janusgraph.diskstorage.util.time.*;
-import org.janusgraph.diskstorage.configuration.*;
-import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-import org.janusgraph.diskstorage.configuration.backend.KCVSConfiguration;
-import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
-import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
-import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
-import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
-import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
-import org.janusgraph.diskstorage.log.kcvs.KCVSLogManager;
-import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
-import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
-import org.janusgraph.graphdb.database.cache.SchemaCache;
-import org.janusgraph.graphdb.database.serialize.StandardSerializer;
-import org.janusgraph.util.encoding.LongEncoding;
-import org.janusgraph.util.system.ConfigurationUtil;
-import org.janusgraph.util.system.NetworkUtil;
-
-import org.apache.tinkerpop.gremlin.structure.Graph;
-import info.ganglia.gmetric4j.gmetric.GMetric.UDPAddressingMode;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
@@ -57,26 +21,77 @@ import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.Nullable;
 import javax.management.MBeanServerFactory;
 
 import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.configuration.*;
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.ClassUtils;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.janusgraph.core.JanusGraphConfigurationException;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.attribute.AttributeSerializer;
+import org.janusgraph.core.schema.DefaultSchemaMaker;
+import org.janusgraph.diskstorage.Backend;
+import org.janusgraph.diskstorage.StandardIndexProvider;
+import org.janusgraph.diskstorage.StandardStoreManager;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigElement;
+import org.janusgraph.diskstorage.configuration.ConfigNamespace;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.MergedConfiguration;
+import org.janusgraph.diskstorage.configuration.MixedConfiguration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.ReadConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.KCVSConfiguration;
+import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
+import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.keycolumnvalue.ttl.TTLKCVSManager;
+import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
+import org.janusgraph.diskstorage.log.kcvs.KCVSLogManager;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
+import org.janusgraph.diskstorage.util.time.TimestampProviders;
+import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
+import org.janusgraph.graphdb.database.cache.SchemaCache;
+import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
+import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
+import org.janusgraph.graphdb.database.management.ManagementSystem;
+import org.janusgraph.graphdb.database.serialize.Serializer;
+import org.janusgraph.graphdb.database.serialize.StandardSerializer;
+import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
+import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
+import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
+import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
+import org.janusgraph.util.encoding.LongEncoding;
+import org.janusgraph.util.stats.MetricManager;
+import org.janusgraph.util.stats.NumberUtil;
+import org.janusgraph.util.system.ConfigurationUtil;
+import org.janusgraph.util.system.NetworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import org.janusgraph.diskstorage.Backend;
-import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
-import org.janusgraph.graphdb.database.serialize.Serializer;
-import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
-import org.janusgraph.util.stats.MetricManager;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+import info.ganglia.gmetric4j.gmetric.GMetric.UDPAddressingMode;
 
 /**
  * Provides functionality to configure a {@link org.janusgraph.core.JanusGraph} INSTANCE.
@@ -694,6 +709,11 @@ public class GraphDatabaseConfiguration {
             return integer!=null && integer>1 && NumberUtil.isPowerOf2(integer);
         }
     });
+
+ // ################ PARTITIONING ###########################
+    // ################################################
+
+    public static final ConfigNamespace PARTITIONING_NS = new ConfigNamespace(ROOT_NS,"partitioning","Graph partitioning configuration options for multi-machine deployments");
 
 
 

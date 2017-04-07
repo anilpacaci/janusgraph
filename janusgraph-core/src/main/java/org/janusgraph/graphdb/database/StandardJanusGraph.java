@@ -14,21 +14,54 @@
 
 package org.janusgraph.graphdb.database;
 
-import com.carrotsearch.hppc.LongArrayList;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.*;
-import org.janusgraph.core.*;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REGISTRATION_TIME;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
+
+import javax.annotation.Nullable;
+
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.Multiplicity;
+import org.janusgraph.core.VertexLabel;
 import org.janusgraph.core.schema.ConsistencyModifier;
-import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.core.schema.JanusGraphManagement;
-import org.janusgraph.diskstorage.*;
+import org.janusgraph.core.schema.SchemaStatus;
+import org.janusgraph.diskstorage.Backend;
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.BackendTransaction;
+import org.janusgraph.diskstorage.Entry;
+import org.janusgraph.diskstorage.EntryList;
+import org.janusgraph.diskstorage.EntryMetaData;
+import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
 import org.janusgraph.diskstorage.indexing.IndexEntry;
 import org.janusgraph.diskstorage.indexing.IndexTransaction;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyIterator;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyRangeQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.KeySliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVSCache;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.Message;
@@ -56,8 +89,8 @@ import org.janusgraph.graphdb.relations.EdgeDirection;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphBlueprintsGraph;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphFeatures;
 import org.janusgraph.graphdb.tinkerpop.optimize.AdjacentVertexFilterOptimizerStrategy;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphStepStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphLocalQueryOptimizerStrategy;
+import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphStepStrategy;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
 import org.janusgraph.graphdb.transaction.TransactionConfiguration;
@@ -69,22 +102,19 @@ import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
 import org.janusgraph.graphdb.util.ExceptionFactory;
 import org.janusgraph.util.system.IOUtils;
 import org.janusgraph.util.system.TXUtils;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
-import java.io.IOException;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicLong;
-
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REGISTRATION_TIME;
+import com.carrotsearch.hppc.LongArrayList;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 
 public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
 
@@ -446,6 +476,10 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
 
     public void assignID(InternalVertex vertex, VertexLabel label) {
         idAssigner.assignID(vertex,label);
+    }
+    
+    public void assignID(InternalVertex vertex, VertexLabel label, StarVertex starVertex) {
+    	idAssigner.assignID(vertex, label, starVertex);
     }
 
     public static boolean acquireLock(InternalRelation relation, int pos, boolean acquireLocksConfig) {
