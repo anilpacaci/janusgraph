@@ -7,25 +7,26 @@ import com.google.common.collect.Maps;
 
 /**
  * Java HashMap based implementation
+ * 
  * @author apacaci
  *
  */
-public class InMemoryPlacementHistory implements PlacementHistory {
-	
-	Map<Long, Integer> placementHistory;
-	
+public class InMemoryPlacementHistory<T> implements PlacementHistory<T> {
+
+	Map<T, Integer> placementHistory;
+
 	public InMemoryPlacementHistory(Integer totalCapacity) {
 		Preconditions.checkArgument(totalCapacity > 0);
 		this.placementHistory = Maps.newHashMapWithExpectedSize(totalCapacity);
 	}
 
 	@Override
-	public Integer getPartition(Long id) {
+	public Integer getPartition(T id) {
 		return placementHistory.getOrDefault(id, -1);
 	}
 
 	@Override
-	public void setPartition(Long id, Integer partition) {
+	public void setPartition(T id, Integer partition) {
 		Preconditions.checkArgument(partition >= 0);
 		placementHistory.put(id, partition);
 	}

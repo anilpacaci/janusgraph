@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 
-
 @PreInitializeConfigOptions
 public abstract class AbstractEdgeCutPlacementStrategy implements IDPlacementStrategy {
 
@@ -103,10 +102,10 @@ public abstract class AbstractEdgeCutPlacementStrategy implements IDPlacementStr
 
 		if (config.get(IDS_PLACEMENT_HISTORY).equals(PlacementHistory.MEMCACHED_PLACEMENT_HISTORY)) {
 			String hostname = config.get(IDS_PLACEMENT_HISTORY_HOSTNAME);
-			this.placementHistory = new MemcachedPlacementHistory(hostname);
+			this.placementHistory = new MemcachedPlacementHistory<Long>(hostname);
 			log.warn("Memcached location: {}", hostname);
 		} else {
-			this.placementHistory = new InMemoryPlacementHistory(totalCapacity);
+			this.placementHistory = new InMemoryPlacementHistory<Long>(totalCapacity);
 		}
 
 		availablePartitions = new ArrayList<>(maxPartitions);

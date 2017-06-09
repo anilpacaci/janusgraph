@@ -4,7 +4,7 @@ import com.google.common.base.Preconditions;
 import com.whalin.MemCached.MemCachedClient;
 import com.whalin.MemCached.SockIOPool;
 
-public class MemcachedPlacementHistory implements PlacementHistory {
+public class MemcachedPlacementHistory<T> implements PlacementHistory<T> {
 
 	private static String INSTANCE_NAME = "placement";
 
@@ -28,7 +28,7 @@ public class MemcachedPlacementHistory implements PlacementHistory {
 	}
 
 	@Override
-	public Integer getPartition(Long id) {
+	public Integer getPartition(T id) {
 		Object value = client.get(id.toString());
 		if (value == null)
 			return null;
@@ -36,7 +36,7 @@ public class MemcachedPlacementHistory implements PlacementHistory {
 	}
 
 	@Override
-	public void setPartition(Long id, Integer partition) {
+	public void setPartition(T id, Integer partition) {
 		Preconditions.checkArgument(partition >= 0);
 		client.set(id.toString(), partition);
 	}

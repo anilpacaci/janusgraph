@@ -6,7 +6,7 @@ package org.janusgraph.graphdb.database.idassigner.placement;
  * @author apacaci
  *
  */
-public interface PlacementHistory {
+public interface PlacementHistory<T> {
 	
 	public static String IN_MEMORY_PLACEMENT_HISTORY = "inmemory";
 	public static String MEMCACHED_PLACEMENT_HISTORY = "memcached";
@@ -16,13 +16,13 @@ public interface PlacementHistory {
 	 * @param id
 	 * @return negative number if element is not in history
 	 */
-	public Integer getPartition(Long id);
+	public Integer getPartition(T id);
 	
 	/**
 	 * Set partition ID for the element specified by id
 	 * @param id
 	 * @param partition
 	 */
-	public void setPartition(Long id, Integer partition);
+	public void setPartition(T id, Integer partition);
 
 }
