@@ -698,7 +698,23 @@ public class GraphDatabaseConfiguration {
 //            "Unless explicitly set, this defaults false for stores that hash keys and defaults true for stores that preserve key order " +
 //            "(such as HBase and Cassandra with ByteOrderedPartitioner).",
 //            ConfigOption.Type.FIXED, false);
+    
+    public static final ConfigOption<Boolean> CLUSTER_PARTITION = new ConfigOption<Boolean>(
+			GraphDatabaseConfiguration.CLUSTER_NS, "partition",
+			"Whether the graph's element should be randomly distributed across the cluster "
+					+ "(true) or explicitly allocated to individual partition blocks based on the configured graph partitioner (false). "
+					+ "Unless explicitly set, this defaults false for stores that hash keys and defaults true for stores that preserve key order "
+					+ "(such as HBase and Cassandra with ByteOrderedPartitioner).",
+			ConfigOption.Type.MASKABLE, false);
 
+	public static final ConfigOption<Integer> TOTAL_CAPACITY = new ConfigOption<Integer>(
+			GraphDatabaseConfiguration.CLUSTER_NS, "total-capacity",
+			"Total size (number of vertices) for all partitions, only applicable for explicit graph partitioners",
+			ConfigOption.Type.MASKABLE, 10);
+
+	public static final ConfigOption<Double> PARTITION_BALANCE_SLACK = new ConfigOption<Double>(
+			GraphDatabaseConfiguration.CLUSTER_NS, "partition-balance-slackness",
+			"Slackness paramater for partition balance", ConfigOption.Type.MASKABLE, (double) 0);
 
     public static final ConfigOption<Integer> CLUSTER_MAX_PARTITIONS = new ConfigOption<Integer>(CLUSTER_NS,"max-partitions",
             "The number of virtual partition blocks created in the partitioned graph. This should be larger than the maximum expected number of nodes" +
@@ -769,6 +785,16 @@ public class GraphDatabaseConfiguration {
             "(expressed as a value between 0 and 1), JanusGraph asynchronously begins reserving another block. " +
             "This helps avoid transaction commits waiting on ID reservation even if the block size is relatively small.",
             ConfigOption.Type.MASKABLE, 0.3);
+    
+	public static final ConfigOption<String> IDS_PLACEMENT_HISTORY = new ConfigOption<String>(
+			GraphDatabaseConfiguration.IDS_NS, "placement-history",
+			"Placement history Implementation for Greedy Partitioners", ConfigOption.Type.MASKABLE, "inmemory");
+
+	public static final ConfigOption<String> IDS_PLACEMENT_HISTORY_HOSTNAME = new ConfigOption<String>(
+			GraphDatabaseConfiguration.IDS_NS, "placement-history-hostname",
+			"Memcached Server address for Placement History Implementation", ConfigOption.Type.MASKABLE,
+			"localhost:11211");
+    
 //    public static final String IDS_RENEW_BUFFER_PERCENTAGE_KEY = "renew-percentage";
 //    public static final double IDS_RENEW_BUFFER_PERCENTAGE_DEFAULT = 0.3; // 30 %
 

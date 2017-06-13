@@ -26,37 +26,14 @@ public abstract class AbstractEdgeCutPlacementStrategy implements IDPlacementStr
 
 	private static final Logger log = LoggerFactory.getLogger(AbstractEdgeCutPlacementStrategy.class);
 
+	private static String MEMCACHED_INSTANCE_NAME = "placement";
+
 	/**
 	 * This option was originally in {@link GraphDatabaseConfiguration} but then
 	 * disabled. Now it is just used by GreedyPartitioner to decide between
 	 * random - explicit partitioning. For explicit partitioning to kick in, one
 	 * needs to set this flag <code>true</code>
 	 */
-	public static final ConfigOption<Boolean> CLUSTER_PARTITION = new ConfigOption<Boolean>(
-			GraphDatabaseConfiguration.CLUSTER_NS, "partition",
-			"Whether the graph's element should be randomly distributed across the cluster "
-					+ "(true) or explicitly allocated to individual partition blocks based on the configured graph partitioner (false). "
-					+ "Unless explicitly set, this defaults false for stores that hash keys and defaults true for stores that preserve key order "
-					+ "(such as HBase and Cassandra with ByteOrderedPartitioner).",
-			ConfigOption.Type.MASKABLE, false);
-
-	public static final ConfigOption<Integer> TOTAL_CAPACITY = new ConfigOption<Integer>(
-			GraphDatabaseConfiguration.CLUSTER_NS, "total-capacity",
-			"Total size (number of vertices) for all partitions, only applicable for explicit graph partitioners",
-			ConfigOption.Type.MASKABLE, 10);
-
-	public static final ConfigOption<Double> PARTITION_BALANCE_SLACK = new ConfigOption<Double>(
-			GraphDatabaseConfiguration.CLUSTER_NS, "partition-balance-slackness",
-			"Slackness paramater for partition balance", ConfigOption.Type.MASKABLE, (double) 0);
-
-	public static final ConfigOption<String> IDS_PLACEMENT_HISTORY = new ConfigOption<String>(
-			GraphDatabaseConfiguration.IDS_NS, "placement-history",
-			"Placement history Implementation for Greedy Partitioners", ConfigOption.Type.MASKABLE, "inmemory");
-
-	public static final ConfigOption<String> IDS_PLACEMENT_HISTORY_HOSTNAME = new ConfigOption<String>(
-			GraphDatabaseConfiguration.IDS_NS, "placement-history-hostname",
-			"Memcached Server address for Placement History Implementation", ConfigOption.Type.MASKABLE,
-			"localhost:11211");
 
 	public static final ConfigOption<String[]> PARTITIONING_VERTEX_LABELS = new ConfigOption<String[]>(
 			GraphDatabaseConfiguration.PARTITIONING_NS, "vertex-labels",
@@ -90,9 +67,9 @@ public abstract class AbstractEdgeCutPlacementStrategy implements IDPlacementStr
 
 	public AbstractEdgeCutPlacementStrategy(Configuration config) {
 		this.maxPartitions = config.get(GraphDatabaseConfiguration.CLUSTER_MAX_PARTITIONS);
-		this.totalCapacity = config.get(TOTAL_CAPACITY);
-		this.balanceSlack = config.get(PARTITION_BALANCE_SLACK);
-		this.partitioningEnabled = config.get(CLUSTER_PARTITION);
+		this.totalCapacity = config.get(GraphDatabaseConfiguration.TOTAL_CAPACITY);
+		this.balanceSlack = config.get(GraphDatabaseConfiguration.PARTITION_BALANCE_SLACK);
+		this.partitioningEnabled = config.get(GraphDatabaseConfiguration.CLUSTER_PARTITION);
 
 		log.warn("Partitioning enabled: {}", partitioningEnabled);
 
@@ -100,9 +77,10 @@ public abstract class AbstractEdgeCutPlacementStrategy implements IDPlacementStr
 
 		this.partitionCapacity = (int) ((totalCapacity / maxPartitions) * (1 + balanceSlack));
 
-		if (config.get(IDS_PLACEMENT_HISTORY).equals(PlacementHistory.MEMCACHED_PLACEMENT_HISTORY)) {
-			String hostname = config.get(IDS_PLACEMENT_HISTORY_HOSTNAME);
-			this.placementHistory = new MemcachedPlacementHistory<Long>(hostname);
+		if (config.get(GraphDatabaseConfiguration.IDS_PLACEMENT_HISTORY)
+				.equals(PlacementHistory.MEMCACHED_PLACEMENT_HISTORY)) {
+			String hostname = config.get(GraphDatabaseConfiguration.IDS_PLACEMENT_HISTORY_HOSTNAME);
+			this.placementHistory = new MemcachedPlacementHistory<Long>(MEMCACHED_INSTANCE_NAME, hostname);
 			log.warn("Memcached location: {}", hostname);
 		} else {
 			this.placementHistory = new InMemoryPlacementHistory<Long>(totalCapacity);

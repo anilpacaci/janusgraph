@@ -6,12 +6,10 @@ import com.whalin.MemCached.SockIOPool;
 
 public class MemcachedPlacementHistory<T> implements PlacementHistory<T> {
 
-	private static String INSTANCE_NAME = "placement";
-
 	private MemCachedClient client;
 
-	public MemcachedPlacementHistory(String... servers) {
-		SockIOPool pool = SockIOPool.getInstance(INSTANCE_NAME);
+	public MemcachedPlacementHistory(String instanceName, String... servers) {
+		SockIOPool pool = SockIOPool.getInstance(instanceName);
 		pool.setServers(servers);
 		pool.setFailover(true);
 		pool.setInitConn(10);
@@ -23,8 +21,8 @@ public class MemcachedPlacementHistory<T> implements PlacementHistory<T> {
 		pool.setAliveCheck(true);
 		pool.initialize();
 
-		client = new MemCachedClient(INSTANCE_NAME);
-		client.flushAll();
+		client = new MemCachedClient(instanceName);
+		// client.flushAll();
 	}
 
 	@Override
