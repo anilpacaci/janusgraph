@@ -20,5 +20,10 @@ public class RandomEdgeCutPlacementStrategy extends AbstractEdgeCutPlacementStra
 	public int getPartition(InternalElement element, StarVertex vertex) {
 		return getRandomPartition();
 	}
+	
+	@Override
+	public void assignedPartition(InternalElement element, StarVertex vertex, int partitionID) {
+		// do nothing
+	}
 
 }
