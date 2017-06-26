@@ -84,7 +84,7 @@ public interface JanusGraphTransaction extends Transaction {
 	 * @param starVertex
 	 * @return
 	 */
-	public JanusGraphVertex addStarVertex(Long id, VertexLabel label, StarVertex starVertex);
+	public JanusGraphVertex addStarVertex(Long id, VertexLabel label, StarVertex starVertex, Object... keyValues);
 
 	/**
 	 * Retrieves the vertex for the specified id.

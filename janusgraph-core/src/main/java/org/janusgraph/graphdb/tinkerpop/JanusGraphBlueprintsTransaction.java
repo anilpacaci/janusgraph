@@ -135,13 +135,13 @@ public abstract class JanusGraphBlueprintsTransaction implements JanusGraphTrans
 					: getOrCreateVertexLabel((String) labelValue);
 		}
 
-		final JanusGraphVertex vertex = addStarVertex(null, label, starVertex);
+		final JanusGraphVertex vertex = addStarVertex(null, label, starVertex, keyValues);
 		// for (int i = 0; i < keyValues.length; i = i + 2) {
 		// if (!keyValues[i].equals(T.id) && !keyValues[i].equals(T.label))
 		// ((StandardJanusGraphTx)this).addPropertyInternal(vertex,getOrCreatePropertyKey((String)
 		// keyValues[i]),keyValues[i+1]);
 		// }
-		org.janusgraph.graphdb.util.ElementHelper.attachProperties(vertex, keyValues);
+	
 		return vertex;
 	}
 
