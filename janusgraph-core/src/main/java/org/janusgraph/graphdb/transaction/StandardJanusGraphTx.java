@@ -35,6 +35,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph;
 import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph.StarVertex;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.janusgraph.core.Cardinality;
@@ -599,7 +600,8 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction
 	}
 
 	@Override
-	public JanusGraphVertex addStarVertex(Long vertexId, VertexLabel label, StarVertex starVertex) {
+	public JanusGraphVertex addStarVertex(Long vertexId, VertexLabel label, StarVertex starVertex,
+			Object... keyValues) {
 		verifyWriteAccess();
 		if (label == null)
 			label = BaseVertexLabel.DEFAULT_VERTEXLABEL;
@@ -619,6 +621,15 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction
 		StandardVertex vertex = new StandardVertex(this,
 				IDManager.getTemporaryVertexID(IDManager.VertexIDType.NormalVertex, temporaryIds.nextID()),
 				ElementLifeCycle.New);
+
+		if (starVertex == null) {
+			starVertex = StarGraph.of(vertex).getStarVertex();
+
+			for (int i = 0; i < keyValues.length; i = i + 2) {
+				starVertex.property(keyValues[i].toString(), keyValues[i + 1]);
+			}
+		}
+
 		if (vertexId != null) {
 			vertex.setId(vertexId);
 		} else if (config.hasAssignIDsImmediately() || label.isPartitioned()) {

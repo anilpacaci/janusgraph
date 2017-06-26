@@ -67,7 +67,12 @@ public class PartitionAwarePlacementStrategy implements IDPlacementStrategy {
 
 	@Override
 	public int getPartition(InternalElement element, StarVertex vertex) {
-		String id = vertex.value("iid");
+		String id;
+		if(vertex != null) {
+			id = vertex.value("iid");
+		} else {
+			id = element.value("iid");
+		}
 		Integer partition = placementHistory.getPartition(id);
 		return partition;
 	}
