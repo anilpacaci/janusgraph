@@ -141,6 +141,7 @@ public abstract class JanusGraphBlueprintsTransaction implements JanusGraphTrans
 		// ((StandardJanusGraphTx)this).addPropertyInternal(vertex,getOrCreatePropertyKey((String)
 		// keyValues[i]),keyValues[i+1]);
 		// }
+		org.janusgraph.graphdb.util.ElementHelper.attachProperties(vertex, keyValues);
 	
 		return vertex;
 	}
