@@ -74,6 +74,10 @@ public class PartitionAwarePlacementStrategy implements IDPlacementStrategy {
 			id = element.value("iid");
 		}
 		Integer partition = placementHistory.getPartition(id);
+		if(partition == null) {
+			// assign to random partition
+			partition = random.nextInt(maxPartitions);
+		}
 		return partition;
 	}
 
